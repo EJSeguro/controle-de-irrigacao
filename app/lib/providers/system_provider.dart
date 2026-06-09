@@ -4,32 +4,41 @@ import '../models/leitura.dart';
 import '../services/database_service.dart';
 import '../services/mqtt_service.dart';
 
-class ConsumoRecord {
-  final DateTime data;
-  final double litros;
-  final int tempoSegundos;
-
-  ConsumoRecord({
-    required this.data,
-    required this.litros,
-    required this.tempoSegundos,
-  });
-}
-
 class SystemProvider extends ChangeNotifier {
   final MqttService _mqtt;
   final DatabaseService _db;
 
   SystemProvider(this._mqtt, this._db) {
     _setupMqttCallbacks();
-    _carregarLeituras();
+    _carregarDados();
+  }
+
+  Future<void> _carregarDados() async {
+    await Future.wait([
+      _carregarLeituras(),
+      _carregarConsumos(),
+      _carregarConfig(),
+    ]);
+    notifyListeners();
   }
 
   Future<void> _carregarLeituras() async {
     final saved = await _db.carregarLeituras();
     _leituras.addAll(saved);
     if (_leituras.isNotEmpty) _ultimaLeitura = _leituras.first;
-    notifyListeners();
+  }
+
+  Future<void> _carregarConsumos() async {
+    final saved = await _db.carregarConsumos();
+    _historicoConsumo.addAll(saved);
+  }
+
+  Future<void> _carregarConfig() async {
+    final cfg = await _db.carregarConfigs();
+    _intervaloLeitura = int.tryParse(cfg['intervalo_leitura'] ?? '') ?? 30;
+    _unidadeIntervalo = cfg['unidade_intervalo'] ?? 'min';
+    _potenciaBomba = double.tryParse(cfg['potencia_bomba'] ?? '') ?? 12;
+    _diametroTubulacao = double.tryParse(cfg['diametro_tubulacao'] ?? '') ?? 20;
   }
 
   bool _sistemaLigado = false;
@@ -37,6 +46,7 @@ class SystemProvider extends ChangeNotifier {
   bool _bombaDesligadaManual = false;
   bool _sessaoAtiva = false;
   bool _mqttConectado = false;
+  bool _mqttConectando = false;
   bool _espOnline = false;
 
   int _intervaloLeitura = 30;
@@ -59,6 +69,7 @@ class SystemProvider extends ChangeNotifier {
   bool get bombaDesligadaManual => _bombaDesligadaManual;
   bool get sessaoAtiva => _sessaoAtiva;
   bool get mqttConectado => _mqttConectado;
+  bool get mqttConectando => _mqttConectando;
   bool get espOnline => _espOnline;
   int get intervaloLeitura => _intervaloLeitura;
   String get unidadeIntervalo => _unidadeIntervalo;
@@ -133,11 +144,13 @@ class SystemProvider extends ChangeNotifier {
 
       if (_resultadoTempoBomba != null) {
         _consumoUltimoCiclo = vazaoEstimada * _resultadoTempoBomba! / 60;
-        _historicoConsumo.insert(0, ConsumoRecord(
+        final record = ConsumoRecord(
           data: DateTime.now(),
           litros: _consumoUltimoCiclo,
           tempoSegundos: _resultadoTempoBomba!,
-        ));
+        );
+        _historicoConsumo.insert(0, record);
+        _db.salvarConsumo(record);
       }
 
       notifyListeners();
@@ -183,12 +196,22 @@ class SystemProvider extends ChangeNotifier {
     return 'Encharcado';
   }
 
-  void conectarMqtt() {
-    _mqtt.connect();
-  }
-
-  void desconectarMqtt() {
-    _mqtt.disconnect();
+  Future<void> conectarMqtt() async {
+    _mqttConectando = true;
+    notifyListeners();
+    for (int tentativa = 0; tentativa < 3; tentativa++) {
+      final ok = await _mqtt.connect();
+      if (ok) {
+        _mqttConectando = false;
+        notifyListeners();
+        return;
+      }
+      if (tentativa < 2) {
+        await Future.delayed(Duration(seconds: (tentativa + 1) * 2));
+      }
+    }
+    _mqttConectando = false;
+    notifyListeners();
   }
 
   void realizarLeituraRapida() {
@@ -251,26 +274,32 @@ class SystemProvider extends ChangeNotifier {
 
   void setIntervalo(int valor) {
     _intervaloLeitura = valor;
-    if (_mqttConectado && _unidadeIntervalo == 's' && valor >= 10) {
-      _mqtt.setConfig(valor);
-    } else if (_mqttConectado && _unidadeIntervalo == 'min') {
-      _mqtt.setConfig(valor * 60);
+    if (_mqttConectado) {
+      if (_unidadeIntervalo == 'min' && valor >= 1) {
+        _mqtt.setConfig(valor * 60);
+      } else if (_unidadeIntervalo == 'h' && valor >= 1) {
+        _mqtt.setConfig(valor * 3600);
+      }
     }
+    _db.salvarConfig('intervalo_leitura', valor.toString());
     notifyListeners();
   }
 
   void setUnidadeIntervalo(String unidade) {
     _unidadeIntervalo = unidade;
+    _db.salvarConfig('unidade_intervalo', unidade);
     notifyListeners();
   }
 
   void setPotenciaBomba(double valor) {
     _potenciaBomba = valor;
+    _db.salvarConfig('potencia_bomba', valor.toString());
     notifyListeners();
   }
 
   void setDiametroTubulacao(double valor) {
     _diametroTubulacao = valor;
+    _db.salvarConfig('diametro_tubulacao', valor.toString());
     notifyListeners();
   }
 }

@@ -60,7 +60,11 @@ class MqttService {
         .startClean();
 
     try {
-      await _client!.connect(user, pass);
+      await _client!.connect(user, pass).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      _conectado = false;
+      onConexaoMqtt?.call(false);
+      return false;
     } catch (_) {
       _conectado = false;
       onConexaoMqtt?.call(false);

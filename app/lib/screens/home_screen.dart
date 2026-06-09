@@ -31,6 +31,14 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<SystemProvider>().conectarMqtt();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Conectando ao MQTT...'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
     });
   }
 
@@ -45,23 +53,29 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           GestureDetector(
             onTap: () {
-              if (!system.mqttConectado) {
+              if (!system.mqttConectado && !system.mqttConectando) {
                 system.conectarMqtt();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Tentando conectar ao MQTT...'),
-                    duration: Duration(seconds: 2),
+                    duration: Duration(seconds: 5),
                   ),
                 );
               }
             },
             child: Padding(
               padding: const EdgeInsets.only(right: 8),
-              child: Icon(
-                Icons.circle,
-                size: 12,
-                color: system.mqttConectado ? Colors.green : Colors.red,
-              ),
+              child: system.mqttConectando
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      Icons.circle,
+                      size: 12,
+                      color: system.mqttConectado ? Colors.green : Colors.red,
+                    ),
             ),
           ),
           IconButton(
