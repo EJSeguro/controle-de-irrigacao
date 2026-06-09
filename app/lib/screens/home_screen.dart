@@ -43,12 +43,25 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Controle de Irrigação'),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Icon(
-              Icons.circle,
-              size: 12,
-              color: system.mqttConectado ? Colors.green : Colors.red,
+          GestureDetector(
+            onTap: () {
+              if (!system.mqttConectado) {
+                system.conectarMqtt();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Tentando conectar ao MQTT...'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Icon(
+                Icons.circle,
+                size: 12,
+                color: system.mqttConectado ? Colors.green : Colors.red,
+              ),
             ),
           ),
           IconButton(

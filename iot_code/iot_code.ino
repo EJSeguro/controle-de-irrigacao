@@ -203,9 +203,7 @@ void conectarMQTT() {
   while (!mqttClient.connected()) {
     Serial.print("Conectando ao HiveMQ...");
 
-    mqttClient.setWill(TOPICO_STATUS, "offline", true, 1);
-
-    if (mqttClient.connect(CLIENT_ID, MQTT_USER, MQTT_PASS)) {
+    if (mqttClient.connect(CLIENT_ID, MQTT_USER, MQTT_PASS, TOPICO_STATUS, 1, true, "offline")) {
       Serial.println(" Conectado!");
       digitalWrite(LED_STATUS, HIGH);
 

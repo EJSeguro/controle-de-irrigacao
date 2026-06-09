@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_server_client.dart';
+import 'mqtt_client_platform.dart';
 
 class MqttService {
   static const String host = 'bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud';
   static const int port = 8883;
+  static const String webHost =
+      'wss://bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud:443/mqtt';
+  static const int webPort = 443;
   static const String user = 'sensor_umidade';
   static const String pass = 'Senha1234567890';
   static const String clientId = 'AppControleIrrigacao';
@@ -17,7 +21,7 @@ class MqttService {
   static const String topicoResultado = 'sensor/resultado';
   static const String topicoConfig = 'sensor/config';
 
-  MqttServerClient? _client;
+  MqttClient? _client;
   StreamSubscription? _sub;
 
   bool _conectado = false;
@@ -30,11 +34,23 @@ class MqttService {
   void Function(bool conectado)? onConexaoMqtt;
 
   Future<bool> connect() async {
-    _client = MqttServerClient(host, clientId);
-    _client!.port = port;
-    _client!.secure = true;
+    if (kIsWeb) {
+      _client = createMqttClient(webHost, clientId);
+      _client!.port = webPort;
+    } else {
+      _client = createMqttClient(host, clientId);
+      _client!.port = port;
+    }
     _client!.keepAlivePeriod = 30;
     _client!.logging(on: false);
+
+    _client!.autoReconnect = true;
+    _client!.resubscribeOnAutoReconnect = true;
+    _client!.onAutoReconnect = () => onConexaoMqtt?.call(false);
+    _client!.onAutoReconnected = () {
+      _conectado = true;
+      onConexaoMqtt?.call(true);
+    };
 
     _client!.connectionMessage = MqttConnectMessage()
         .authenticateAs(user, pass)
@@ -51,7 +67,8 @@ class MqttService {
       return false;
     }
 
-    if (_client!.connectionStatus?.state != MqttConnectionState.connected) {
+    final status = _client!.connectionStatus;
+    if (status == null || status.state != MqttConnectionState.connected) {
       _conectado = false;
       onConexaoMqtt?.call(false);
       return false;
