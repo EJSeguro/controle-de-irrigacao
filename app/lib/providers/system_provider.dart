@@ -1,4 +1,6 @@
+import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../models/leitura.dart';
 
 class SystemProvider extends ChangeNotifier {
   bool _sistemaLigado = false;
@@ -10,6 +12,9 @@ class SystemProvider extends ChangeNotifier {
   double _potenciaBomba = 12;
   double _diametroTubulacao = 20;
 
+  final List<Leitura> _leituras = [];
+  Leitura? _ultimaLeitura;
+
   bool get sistemaLigado => _sistemaLigado;
   bool get bombaLigada => _bombaLigada;
   bool get bombaDesligadaManual => _bombaDesligadaManual;
@@ -17,6 +22,8 @@ class SystemProvider extends ChangeNotifier {
   String get unidadeIntervalo => _unidadeIntervalo;
   double get potenciaBomba => _potenciaBomba;
   double get diametroTubulacao => _diametroTubulacao;
+  List<Leitura> get leituras => List.unmodifiable(_leituras);
+  Leitura? get ultimaLeitura => _ultimaLeitura;
 
   bool get configValida =>
       _intervaloLeitura > 0 && _potenciaBomba > 0 && _diametroTubulacao > 0;
@@ -28,15 +35,42 @@ class SystemProvider extends ChangeNotifier {
     return null;
   }
 
-  void toggleSistema() {
-    if (_sistemaLigado) {
-      _sistemaLigado = false;
-      _bombaLigada = false;
+  void _adicionarLeitura(int umidade, String tipo) {
+    String status;
+    if (umidade < 20) {
+      status = 'Muito seco';
+    } else if (umidade < 45) {
+      status = 'Seco';
+    } else if (umidade < 65) {
+      status = 'Ideal';
+    } else if (umidade < 85) {
+      status = 'Úmido';
     } else {
-      _sistemaLigado = true;
-      if (!_bombaDesligadaManual) {
-        _bombaLigada = true;
-      }
+      status = 'Encharcado';
+    }
+
+    final leitura = Leitura(
+      data: DateTime.now(),
+      umidade: umidade,
+      statusSolo: status,
+      tipo: tipo,
+    );
+
+    _leituras.insert(0, leitura);
+    _ultimaLeitura = leitura;
+    notifyListeners();
+  }
+
+  void realizarLeituraRapida() {
+    final rng = Random();
+    final umidade = rng.nextInt(81) + 5;
+    _adicionarLeitura(umidade, 'manual');
+  }
+
+  void toggleSistema() {
+    _sistemaLigado = !_sistemaLigado;
+    if (!_sistemaLigado) {
+      _bombaLigada = false;
     }
     notifyListeners();
   }

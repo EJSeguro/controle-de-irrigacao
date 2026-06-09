@@ -5,6 +5,7 @@ import 'metrics_screen.dart';
 import 'sensor_screen.dart';
 import 'pump_screen.dart';
 import 'config_screen.dart';
+import 'readings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
     SensorScreen(),
     PumpScreen(),
     ConfigScreen(),
+    ReadingsScreen(),
   ];
 
   @override
@@ -62,6 +64,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: 'Config',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history),
+            label: 'Leituras',
           ),
         ],
       ),

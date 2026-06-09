@@ -34,9 +34,25 @@ class MetricsScreen extends StatelessWidget {
     system.toggleSistema();
   }
 
+  void _leituraRapida(BuildContext context) {
+    final system = context.read<SystemProvider>();
+    system.realizarLeituraRapida();
+
+    final ultima = system.ultimaLeitura;
+    if (ultima != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Leitura: ${ultima.umidade}% — Solo ${ultima.statusSolo}'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final system = context.watch<SystemProvider>();
+    final ultima = system.ultimaLeitura;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -51,6 +67,35 @@ class MetricsScreen extends StatelessWidget {
                   ? Icons.power_settings_new
                   : Icons.power_off,
               color: system.sistemaLigado ? Colors.green : Colors.red,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Leitura Rápida do Solo',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      tooltip: 'Ler solo agora',
+                      onPressed: () => _leituraRapida(context),
+                    ),
+                  ],
+                ),
+                if (ultima != null) ...[
+                  const Divider(),
+                  _infoRow('Umidade', '${ultima.umidade}%'),
+                  _infoRow('Status', ultima.statusSolo),
+                  _infoRow('Data/hora', ultima.horaFormatada),
+                ],
+              ],
             ),
           ),
         ),
@@ -80,23 +125,6 @@ class MetricsScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Última Leitura do Sensor',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                _infoRow('Umidade', '45%'),
-                _infoRow('Status do solo', 'Seco'),
-                _infoRow('Data/hora', '08/06/2026 19:30'),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
                 Text('Status do Sistema',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
@@ -106,7 +134,8 @@ class MetricsScreen extends StatelessWidget {
                 if (system.bombaDesligadaManual)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text('Bomba desligada manualmente. Ligue-a na tela Bomba para reativar.',
+                    child: Text(
+                        'Bomba desligada manualmente. Ligue-a na tela Bomba para reativar.',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.error,
                           fontSize: 12,
