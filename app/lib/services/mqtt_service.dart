@@ -46,11 +46,6 @@ class MqttService {
 
     _client!.autoReconnect = true;
     _client!.resubscribeOnAutoReconnect = true;
-    _client!.onAutoReconnect = () => onConexaoMqtt?.call(false);
-    _client!.onAutoReconnected = () {
-      _conectado = true;
-      onConexaoMqtt?.call(true);
-    };
 
     _client!.connectionMessage = MqttConnectMessage()
         .authenticateAs(user, pass)
