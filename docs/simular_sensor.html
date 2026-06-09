@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simular Sensor - HiveMQ</title>
+<style>
+* { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; max-width: 500px; margin: 40px auto; padding: 16px; background: #f5f5f5; }
+.card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+h2 { margin: 0 0 20px; font-size: 1.3rem; }
+label { display: block; margin-bottom: 4px; font-weight: 600; font-size: .9rem; }
+input, select, button { width: 100%; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 16px; }
+button { cursor: pointer; font-weight: 700; border: none; }
+.connected { background: #e8f5e9; color: #2e7d32; padding: 8px; border-radius: 8px; text-align: center; margin-bottom: 16px; }
+.disconnected { background: #ffebee; color: #c62828; padding: 8px; border-radius: 8px; text-align: center; margin-bottom: 16px; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; }
+#btnSimular { background: #1565c0; color: #fff; }
+#btnSimular:disabled { opacity: .5; cursor: not-allowed; }
+#btnOn { background: #2e7d32; color: #fff; }
+#btnOff { background: #c62828; color: #fff; }
+#log { background: #111; color: #0f0; font-family: monospace; font-size: .8rem; padding: 12px; border-radius: 8px; height: 150px; overflow-y: auto; margin-top: 16px; white-space: pre-wrap; }
+pre { margin: 0; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Simular Sensor</h2>
+  <div id="status" class="disconnected">Desconectado</div>
+  <button id="btnConectar">Conectar</button>
+
+  <label>Umidade (%)</label>
+  <input type="range" id="umidade" min="0" max="100" value="30">
+  <div id="umidadeValor" style="text-align:center;font-size:1.4rem;font-weight:700;margin-top:-12px;margin-bottom:16px">30%</div>
+
+  <div class="row">
+    <div>
+      <label>Bomba</label>
+      <select id="bomba">
+        <option value="ON">ON</option>
+        <option value="OFF">OFF</option>
+      </select>
+    </div>
+    <div>
+      <label>Tipo</label>
+      <select id="tipo">
+        <option value="auto">Auto</option>
+        <option value="manual">Manual</option>
+      </select>
+    </div>
+  </div>
+
+  <button id="btnSimular" disabled>Publicar em sensor_umidade</button>
+
+  <div class="row">
+    <button id="btnOn">Bomba ON</button>
+    <button id="btnOff">Bomba OFF</button>
+  </div>
+
+  <div id="log">Conecte ao MQTT para começar.</div>
+</div>
+
+<script src="https://unpkg.com/mqtt@5/dist/mqtt.min.js"></script>
+<script>
+const clientId = 'SimuladorWeb_' + Math.random().toString(36).substring(2, 8);
+const options = {
+  clientId,
+  username: 'sensor_umidade',
+  password: 'Senha1234567890',
+  clean: true,
+};
+const url = 'wss://bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud:8884/mqtt';
+
+let client = null;
+
+const status = document.getElementById('status');
+const log = document.getElementById('log');
+const btnConectar = document.getElementById('btnConectar');
+const btnSimular = document.getElementById('btnSimular');
+const slider = document.getElementById('umidade');
+const umidadeValor = document.getElementById('umidadeValor');
+
+function logMsg(msg) {
+  const t = new Date().toLocaleTimeString();
+  log.textContent += `[${t}] ${msg}\n`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateStatus(connected) {
+  if (connected) {
+    status.className = 'connected';
+    status.textContent = 'Conectado';
+    btnSimular.disabled = false;
+    btnConectar.textContent = 'Desconectar';
+  } else {
+    status.className = 'disconnected';
+    status.textContent = 'Desconectado';
+    btnSimular.disabled = true;
+    btnConectar.textContent = 'Conectar';
+  }
+}
+
+slider.addEventListener('input', () => {
+  umidadeValor.textContent = `${slider.value}%`;
+});
+
+btnConectar.addEventListener('click', () => {
+  if (client && client.connected) {
+    client.end(true);
+    client = null;
+    updateStatus(false);
+    logMsg('Desconectado');
+    return;
+  }
+
+  logMsg('Conectando...');
+  client = mqtt.connect(url, options);
+
+  client.on('connect', () => {
+    logMsg('Conectado!');
+    updateStatus(true);
+  });
+
+  client.on('error', (err) => {
+    logMsg('Erro: ' + err.message);
+    updateStatus(false);
+  });
+
+  client.on('close', () => {
+    logMsg('Conexão fechada');
+    updateStatus(false);
+    client = null;
+  });
+});
+
+function publicar(umidade, bomba, tipo) {
+  if (!client || !client.connected) {
+    logMsg('Erro: desconectado');
+    return;
+  }
+  const payload = JSON.stringify({ umidade, status: umidade < 45 ? 'seco' : umidade < 65 ? 'ideal' : 'úmido', bomba, tipo });
+  client.publish('sensor_umidade', payload);
+  logMsg(`Publicado: ${payload}`);
+}
+
+btnSimular.addEventListener('click', () => {
+  const umidade = parseInt(slider.value);
+  const bomba = document.getElementById('bomba').value;
+  const tipo = document.getElementById('tipo').value;
+  publicar(umidade, bomba, tipo);
+});
+
+document.getElementById('btnOn').addEventListener('click', () => {
+  publicar(parseInt(slider.value), 'ON', document.getElementById('tipo').value);
+});
+
+document.getElementById('btnOff').addEventListener('click', () => {
+  publicar(parseInt(slider.value), 'OFF', document.getElementById('tipo').value);
+});
+</script>
+</body>
+</html>
