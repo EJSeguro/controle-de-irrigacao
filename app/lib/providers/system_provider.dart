@@ -10,8 +10,12 @@ class SystemProvider extends ChangeNotifier {
 
   String? _usuarioEmail;
 
+  static const int _thresholdSeco = 45;
+  static const Duration _duracaoMaxSessao = Duration(minutes: 2);
+
   SystemProvider(this._mqtt, this._db) {
     _setupMqttCallbacks();
+    _timerSessao();
   }
 
   Future<void> inicarSessao(String email) async {
@@ -27,10 +31,6 @@ class SystemProvider extends ChangeNotifier {
     _bombaLigada = false;
     _bombaDesligadaManual = false;
     _sessaoAtiva = false;
-    final temDados = await _db.usuarioTemDados(email);
-    if (!temDados) {
-      await _db.sembrarDadosMock(email);
-    }
     await Future.wait([
       _carregarLeituras(),
       _carregarConsumos(),
@@ -80,6 +80,9 @@ class SystemProvider extends ChangeNotifier {
 
   final List<ConsumoRecord> _historicoConsumo = [];
   double _consumoUltimoCiclo = 0;
+
+  DateTime? _inicioSessao;
+  DateTime? _bombaLigadaDesde;
 
   bool get sistemaLigado => _sistemaLigado;
   bool get bombaLigada => _bombaLigada;
@@ -137,6 +140,21 @@ class SystemProvider extends ChangeNotifier {
     return null;
   }
 
+  void _timerSessao() {
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 5));
+      _verificarTimeoutSessao();
+      return true;
+    });
+  }
+
+  void _verificarTimeoutSessao() {
+    if (!_sessaoAtiva || _inicioSessao == null) return;
+    if (DateTime.now().difference(_inicioSessao!) >= _duracaoMaxSessao) {
+      _finalizarSessao(timeout: true);
+    }
+  }
+
   void _setupMqttCallbacks() {
     _mqtt.onLeituraSensor = (data) {
       final umidade = data['umidade'] as int? ?? 0;
@@ -144,37 +162,18 @@ class SystemProvider extends ChangeNotifier {
       final statusStr = data['status'] as String?;
       _adicionarLeitura(umidade, tipo, statusSolo: statusStr);
 
-      final bombaStatus = (data['bomba'] as String? ?? '').toUpperCase();
-      if (bombaStatus == 'ON') {
-        _bombaLigada = true;
-      } else if (bombaStatus == 'OFF') {
-        _bombaLigada = false;
-      }
-      notifyListeners();
-    };
-
-    _mqtt.onResultadoSessao = (data) {
-      _resultadoAntes = data['antes'] as int?;
-      _resultadoDepois = data['depois'] as int?;
-      _resultadoTempoBomba = data['tempo_bomba'] as int?;
-      _sessaoAtiva = false;
-
-      if (_resultadoTempoBomba != null) {
-        _consumoUltimoCiclo = vazaoEstimada * _resultadoTempoBomba! / 60;
-        final record = ConsumoRecord(
-          data: DateTime.now(),
-          litros: _consumoUltimoCiclo,
-          tempoSegundos: _resultadoTempoBomba!,
-        );
-        _historicoConsumo.insert(0, record);
-        _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
-      }
-
-      notifyListeners();
+      _aplicarRegraDeNegocio(umidade);
     };
 
     _mqtt.onStatusBomba = (status) {
-      _bombaLigada = status == 'ON';
+      final ligada = status == 'ON';
+      if (ligada && !_bombaLigada) {
+        _bombaLigada = true;
+        _bombaLigadaDesde = DateTime.now();
+      } else if (!ligada && _bombaLigada) {
+        _bombaLigada = false;
+        _bombaLigadaDesde = null;
+      }
       notifyListeners();
     };
 
@@ -187,6 +186,81 @@ class SystemProvider extends ChangeNotifier {
       _mqttConectado = conectado;
       notifyListeners();
     };
+  }
+
+  void _aplicarRegraDeNegocio(int umidade) {
+    if (!_sessaoAtiva) return;
+
+    _resultadoAntes ??= umidade;
+
+    if (umidade < _thresholdSeco) {
+      if (!_bombaLigada) {
+        _ligarBombaInterno();
+      }
+    } else {
+      if (_bombaLigada) {
+        _bombaDesligadaManual = false;
+        if (_mqttConectado) _mqtt.setBomba(false);
+        _bombaLigada = false;
+        _resultadoDepois = umidade;
+        _calcularConsumoEConsolidar();
+      }
+    }
+  }
+
+  void _calcularConsumoEConsolidar() {
+    if (_bombaLigadaDesde != null) {
+      final duracao = DateTime.now().difference(_bombaLigadaDesde!);
+      _resultadoTempoBomba = duracao.inSeconds;
+    } else {
+      _resultadoTempoBomba = 0;
+    }
+    _bombaLigadaDesde = null;
+    _consumoUltimoCiclo = vazaoEstimada * (_resultadoTempoBomba ?? 0) / 60;
+
+    if (_resultadoTempoBomba != null && _resultadoTempoBomba! > 0) {
+      final record = ConsumoRecord(
+        data: DateTime.now(),
+        litros: _consumoUltimoCiclo,
+        tempoSegundos: _resultadoTempoBomba!,
+      );
+      _historicoConsumo.insert(0, record);
+      _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
+    }
+
+    _sessaoAtiva = false;
+    _sistemaLigado = false;
+    _inicioSessao = null;
+    notifyListeners();
+  }
+
+  void _finalizarSessao({bool timeout = false}) {
+    if (_bombaLigada) {
+      if (_mqttConectado) _mqtt.setBomba(false);
+      _bombaLigada = false;
+    }
+
+    final tempo = _bombaLigadaDesde != null
+        ? DateTime.now().difference(_bombaLigadaDesde!).inSeconds
+        : 0;
+    _resultadoTempoBomba = tempo;
+    _bombaLigadaDesde = null;
+    _consumoUltimoCiclo = vazaoEstimada * tempo / 60;
+
+    if (tempo > 0) {
+      final record = ConsumoRecord(
+        data: DateTime.now(),
+        litros: _consumoUltimoCiclo,
+        tempoSegundos: tempo,
+      );
+      _historicoConsumo.insert(0, record);
+      _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
+    }
+
+    _sessaoAtiva = false;
+    _sistemaLigado = false;
+    _inicioSessao = null;
+    notifyListeners();
   }
 
   void _adicionarLeitura(int umidade, String tipo, {String? statusSolo}) {
@@ -252,13 +326,20 @@ class SystemProvider extends ChangeNotifier {
       _sistemaLigado = false;
       _sessaoAtiva = false;
       _bombaLigada = false;
+      _bombaLigadaDesde = null;
+      _inicioSessao = null;
+      _resultadoAntes = null;
+      _resultadoDepois = null;
+      _resultadoTempoBomba = null;
     } else {
       _mqtt.sendComando('LIGAR');
       _sistemaLigado = true;
       _sessaoAtiva = true;
+      _inicioSessao = DateTime.now();
       _resultadoAntes = null;
       _resultadoDepois = null;
       _resultadoTempoBomba = null;
+      _bombaDesligadaManual = false;
     }
     notifyListeners();
   }
@@ -270,12 +351,27 @@ class SystemProvider extends ChangeNotifier {
     _sistemaLigado = false;
     _sessaoAtiva = false;
     _bombaLigada = false;
+    _bombaLigadaDesde = null;
+    _inicioSessao = null;
+    _resultadoAntes = null;
+    _resultadoDepois = null;
+    _resultadoTempoBomba = null;
+    notifyListeners();
+  }
+
+  void _ligarBombaInterno() {
+    _bombaDesligadaManual = false;
+    _bombaLigada = true;
+    _bombaLigadaDesde = DateTime.now();
+    _sistemaLigado = true;
+    if (_mqttConectado) _mqtt.setBomba(true);
     notifyListeners();
   }
 
   void ligarBomba() {
     _bombaDesligadaManual = false;
     _bombaLigada = true;
+    _bombaLigadaDesde = DateTime.now();
     _sistemaLigado = true;
     if (_mqttConectado) _mqtt.setBomba(true);
     notifyListeners();
@@ -284,6 +380,7 @@ class SystemProvider extends ChangeNotifier {
   void desligarBombaManual() {
     _bombaDesligadaManual = true;
     _bombaLigada = false;
+    _bombaLigadaDesde = null;
     _sistemaLigado = false;
     if (_mqttConectado) _mqtt.setBomba(false);
     notifyListeners();

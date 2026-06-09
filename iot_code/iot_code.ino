@@ -22,7 +22,6 @@ const char* TOPICO_SENSOR         = "sensor_umidade";
 const char* TOPICO_BOMBA          = "Bomba";
 const char* TOPICO_SENSOR_COMANDO = "sensor/comando";
 const char* TOPICO_STATUS         = "esp32/status";
-const char* TOPICO_RESULTADO      = "sensor/resultado";
 const char* TOPICO_CONFIG         = "sensor/config";
 
 // ============================================================
@@ -38,23 +37,17 @@ const int LED_STATUS = 2;
 const int VALOR_SECO  = 4095;
 const int VALOR_UMIDO = 1200;
 const int AMOSTRAS    = 10;
-const int LIMIAR_SECO = 45;
 
 // ============================================================
-// Temporização e sessão
+// Temporização e watchdog
 // ============================================================
-const unsigned long DURACAO_SESSAO_MS    = 120000; // 2 minutos
-const unsigned long COOLDOWN_LEITURA_MS  = 10000;  // 10s entre leituras
-unsigned long intervaloLeituraMs         = 30000;  // 30s entre leituras na sessão
-unsigned long ultimaLeituraMs            = 0;
+const unsigned long COOLDOWN_LEITURA_MS = 10000;
+const unsigned long WATCHDOG_BOMBA_MS   = 120000; // 2 min máx bomba ligada
+unsigned long intervaloLeituraMs        = 30000;
+unsigned long ultimaLeituraMs           = 0;
 
-bool sessaoAtiva   = false;
+bool sistemaAtivo  = false;
 bool bombaLigada   = false;
-bool bombaBloqueada = false; // bloqueio por desligamento manual
-unsigned long inicioSessao    = 0;
-int  umidadeAntes             = -1;
-int  ultimaUmidade            = -1;
-unsigned long tempoBombaMs    = 0;
 unsigned long bombaLigadaDesde = 0;
 
 WiFiClientSecure espClient;
@@ -73,23 +66,24 @@ void publicarLeitura(int umidade, const String& tipo);
 // Controle da bomba
 // ============================================================
 void ligarBomba() {
-  if (!bombaLigada && !bombaBloqueada) {
-    digitalWrite(BOMBA_PIN, HIGH);
-    bombaLigada = true;
-    bombaLigadaDesde = millis();
-    mqttClient.publish(TOPICO_BOMBA, "ON", true);
-    Serial.println(">> Bomba LIGADA");
+  if (!sistemaAtivo) {
+    Serial.println(">> Sistema inativo, Bomba ON ignorado");
+    return;
   }
+  if (bombaLigada) return;
+  digitalWrite(BOMBA_PIN, HIGH);
+  bombaLigada = true;
+  bombaLigadaDesde = millis();
+  mqttClient.publish(TOPICO_BOMBA, "ON", true);
+  Serial.println(">> Bomba LIGADA");
 }
 
 void desligarBomba() {
-  if (bombaLigada) {
-    digitalWrite(BOMBA_PIN, LOW);
-    tempoBombaMs += millis() - bombaLigadaDesde;
-    bombaLigada = false;
-    mqttClient.publish(TOPICO_BOMBA, "OFF", true);
-    Serial.println(">> Bomba DESLIGADA");
-  }
+  if (!bombaLigada) return;
+  digitalWrite(BOMBA_PIN, LOW);
+  bombaLigada = false;
+  mqttClient.publish(TOPICO_BOMBA, "OFF", true);
+  Serial.println(">> Bomba DESLIGADA");
 }
 
 // ============================================================
@@ -103,22 +97,15 @@ void callbackMQTT(char* topico, byte* payload, unsigned int tamanho) {
 
   Serial.println("Recebido [" + String(topico) + "]: " + mensagem);
 
-  // ── Bomba (override manual) ──────────────────────────────
+  // ── Bomba (app decide, ESP executa) ───────────────────────
   if (String(topico) == TOPICO_BOMBA) {
     mensagem.trim();
     mensagem.toUpperCase();
     if (mensagem == "ON") {
-      bombaBloqueada = false;
       ligarBomba();
     }
     if (mensagem == "OFF") {
-      bombaBloqueada = true;
       desligarBomba();
-      // Se estiver em sessão, encerra
-      if (sessaoAtiva) {
-        sessaoAtiva = false;
-        Serial.println(">> Sessão encerrada por desligamento manual da bomba");
-      }
     }
   }
 
@@ -128,23 +115,18 @@ void callbackMQTT(char* topico, byte* payload, unsigned int tamanho) {
     mensagem.toUpperCase();
 
     if (mensagem == "LIGAR") {
-      if (sessaoAtiva) {
-        Serial.println(">> Sessão já ativa, ignorando");
+      if (sistemaAtivo) {
+        Serial.println(">> Sistema já ativo, ignorando");
         return;
       }
-      sessaoAtiva = true;
-      inicioSessao = millis();
-      umidadeAntes = -1;
-      ultimaUmidade = -1;
-      tempoBombaMs = 0;
-      bombaBloqueada = false;
-      Serial.println(">> Sessão INICIADA (2 min)");
+      sistemaAtivo = true;
+      Serial.println(">> Sistema ATIVADO (app assume controle)");
     }
 
     else if (mensagem == "DESLIGAR") {
-      sessaoAtiva = false;
+      sistemaAtivo = false;
       desligarBomba();
-      Serial.println(">> Sessão ENCERRADA pelo app");
+      Serial.println(">> Sistema DESATIVADO");
     }
 
     else if (mensagem == "LER") {
@@ -269,37 +251,6 @@ void publicarLeitura(int umidade, const String& tipo) {
 }
 
 // ============================================================
-// Finalizar sessão e publicar resultado
-// depoisForcado = -1 → lê o sensor agora
-// depoisForcado >= 0 → usa este valor (evita leitura extra)
-// ============================================================
-void finalizarSessao(int depoisForcado = -1) {
-  desligarBomba();
-  sessaoAtiva = false;
-
-  if (umidadeAntes >= 0) {
-    int depois = (depoisForcado >= 0) ? depoisForcado : lerUmidade();
-    unsigned long tempoBombaSeg = tempoBombaMs / 1000;
-
-    StaticJsonDocument<128> doc;
-    doc["antes"]       = umidadeAntes;
-    doc["depois"]      = depois;
-    doc["tempo_bomba"] = (int)tempoBombaSeg;
-
-    char payload[128];
-    serializeJson(doc, payload);
-
-    if (mqttClient.publish(TOPICO_RESULTADO, payload)) {
-      Serial.println("Resultado da sessão: " + String(payload));
-    } else {
-      Serial.println("Falha ao publicar resultado!");
-    }
-  }
-
-  Serial.println(">> Sessão FINALIZADA");
-}
-
-// ============================================================
 // Setup
 // ============================================================
 void setup() {
@@ -343,42 +294,16 @@ void loop() {
 
   unsigned long agora = millis();
 
-  // ── Sessão ativa ─────────────────────────────────────────
-  if (sessaoAtiva) {
-    unsigned long tempoSessao = agora - inicioSessao;
+  // ── Watchdog da bomba ─────────────────────────────────────
+  if (bombaLigada && (agora - bombaLigadaDesde >= WATCHDOG_BOMBA_MS)) {
+    Serial.println(">> WATCHDOG: tempo máximo da bomba excedido, desligando!");
+    desligarBomba();
+  }
 
-    // Verifica timeout de 2 minutos
-    if (tempoSessao >= DURACAO_SESSAO_MS) {
-      Serial.println(">> Tempo de sessão esgotado (2 min)");
-      finalizarSessao();
-      return;
-    }
-
-    // Hora de fazer uma leitura?
-    if (agora - ultimaLeituraMs >= intervaloLeituraMs) {
-      int umidade = lerUmidade();
-      ultimaUmidade = umidade;
-
-      // Primeira leitura da sessão
-      if (umidadeAntes < 0) {
-        umidadeAntes = umidade;
-      }
-
-      publicarLeitura(umidade, "auto");
-
-      // Controle automático da bomba
-      if (umidade < LIMIAR_SECO) {
-        ligarBomba();
-      } else {
-        // Solo ficou úmido depois de ter estado seco → encerra
-        if (bombaLigada || tempoBombaMs > 0) {
-          finalizarSessao(umidade);
-          return;
-        }
-        // Solo já estava úmido, apenas garante bomba desligada
-        desligarBomba();
-      }
-    }
+  // ── Leituras automáticas (sistema ativo) ──────────────────
+  if (sistemaAtivo && (agora - ultimaLeituraMs >= intervaloLeituraMs)) {
+    int umidade = lerUmidade();
+    publicarLeitura(umidade, "auto");
   }
 
   delay(100);
