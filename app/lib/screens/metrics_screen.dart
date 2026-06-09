@@ -80,7 +80,7 @@ class MetricsScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Leitura Rápida do Solo',
+                    Text('Última Leitura do Solo',
                         style: Theme.of(context).textTheme.titleMedium),
                     IconButton(
                       icon: const Icon(Icons.refresh),
@@ -89,11 +89,18 @@ class MetricsScreen extends StatelessWidget {
                     ),
                   ],
                 ),
+                const Divider(),
                 if (ultima != null) ...[
-                  const Divider(),
                   _infoRow('Umidade', '${ultima.umidade}%'),
                   _infoRow('Status', ultima.statusSolo),
                   _infoRow('Data/hora', ultima.horaFormatada),
+                  _infoRow('Tipo', ultima.tipo == 'manual' ? 'Manual' : 'Automática'),
+                ] else ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text('Nenhuma leitura ainda. Toque no refresh para ler o solo.',
+                        style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+                  ),
                 ],
               ],
             ),
