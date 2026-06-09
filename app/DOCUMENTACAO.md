@@ -83,25 +83,18 @@ Todas as configurações do sistema reunidas aqui:
 
 ## 4. Comunicação MQTT
 
-### 4.1 Tópicos Existentes (ESP32)
+### 4.1 Tópicos MQTT
 
 | Tópico | Direção | Formato | Descrição |
 |---|---|---|---|
-| `sensor_umidade` | ESP → App | `{"umidade": 45, "status": "seco", "bomba": "OFF"}` | Dados do sensor |
-| `Bomba` | App → ESP | `"ON"` / `"OFF"` | Controle da bomba (com retain) |
-| `sensor/comando` | App → ESP | `"LIGAR"` / `"DESLIGAR"` | Ativar/desativar sensor |
+| `sensor_umidade` | ESP → App | `{"umidade": 45, "status": "seco", "bomba": "OFF", "tipo": "auto"}` | Dados do sensor (`tipo`: `"auto"` ou `"manual"`) |
+| `Bomba` | App → ESP | `"ON"` / `"OFF"` | Controle da bomba (com retain, override manual) |
+| `sensor/comando` | App → ESP | `"LIGAR"` / `"DESLIGAR"` / `"LER"` | Ativar sessão de 2 min, desativar, ou leitura rápida |
 | `esp32/status` | ESP → App | `"online"` / `"offline"` | Status do ESP (com LWT e retain) |
-
-### 4.2 Novos Tópicos Sugeridos
-
-| Tópico | Direção | Formato | Descrição |
-|---|---|---|---|
-| `wifi/config` | App → ESP | `{"ssid": "...", "password": "..."}` | Enviar credenciais Wi-Fi |
-| `sensor/config` | App → ESP | `{"intervalo": 30}` | Configurar intervalo do sensor |
-| `bomba/config` | App → ESP | `{"potencia": 12, "diametro": 20}` | Configurar parâmetros da bomba |
+| `sensor/config` | App → ESP | `{"intervalo_s": 30}` | Configurar intervalo entre leituras na sessão (mín 10s) |
 | `sensor/resultado` | ESP → App | `{"antes": 20, "depois": 65, "tempo_bomba": 45}` | Resultado da sessão de leitura |
 
-### 4.3 Broker
+### 4.2 Broker
 
 - Host: `bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud`
 - Porta: `8883` (TLS)
@@ -163,15 +156,25 @@ class SensorSession {
 
 ## 6. Funcionalidades Detalhadas
 
-### 6.1 Ciclo do Sensor
+### 6.1 Ciclo do Sensor (Sessão Automática)
 
 1. Usuário liga o sensor (switch na Tela do Sensor).
 2. App publica `"LIGAR"` no tópico `sensor/comando`.
-3. ESP32 inicia leituras por 2 minutos no intervalo configurado.
-4. Durante a leitura, se o solo estiver seco (`umidade < 45`), ESP32 liga a bomba.
-5. Quando o solo sair do estado seco, ESP32 desliga a bomba e encerra a sessão.
-6. ESP32 publica o resultado em `sensor/resultado` com médias.
-7. App armazena a `SensorSession` localmente.
+3. ESP32 registra umidade inicial (`antes`) e inicia leituras a cada `intervalo_s` por até 2 minutos.
+4. Se em qualquer leitura o solo estiver seco (`umidade < 45`), ESP32 liga a bomba automaticamente.
+5. Quando o solo deixar de estar seco, ESP32 desliga a bomba, encerra a sessão e publica `sensor/resultado`.
+6. Se o solo nunca ficar seco, a sessão dura os 2 minutos completos.
+7. Se o solo nunca ficar úmido, a bomba fica ligada até o fim dos 2 minutos.
+8. ESP32 publica o resultado em `sensor/resultado` com `antes`, `depois`, `tempo_bomba`.
+9. App armazena a `SensorSession` localmente.
+
+### 6.2 Leitura Rápida (Manual)
+
+1. Usuário toca em "Ler solo agora" na tela Métricas.
+2. App publica `"LER"` no tópico `sensor/comando`.
+3. ESP32 faz uma única leitura e publica em `sensor_umidade` com `tipo: "manual"`.
+4. Cooldown mínimo de 10s entre leituras para não sobrecarregar o ESP.
+5. App exibe o resultado e adiciona ao histórico de leituras.
 
 ### 6.2 Cálculo de Consumo de Água
 
@@ -253,16 +256,14 @@ Métricas (Home) ──→ Sensor
 
 ## 10. Código do ESP32 (Referência)
 
-O firmware do ESP32 está em `iot_code/iot_code.ino`. Ele já implementa:
-- Leitura do sensor de umidade no pino 34
-- Controle da bomba no pino 26
-- Conexão Wi-Fi e MQTT
-- Publicação de dados do sensor a cada 30s
-- Callback para comandos `Bomba` e `sensor/comando`
-- LWT para status online/offline
-
-**Importante**: para suportar as novas funcionalidades, o firmware do ESP32 precisará ser atualizado para:
-- Receber config de Wi-Fi via MQTT (`wifi/config`)
-- Receber config de intervalo do sensor (`sensor/config`)
-- Reportar resultado da sessão (`sensor/resultado`)
-- Suportar o ciclo de 2 minutos com média antes/depois
+O firmware do ESP32 está em `iot_code/iot_code.ino`. Ele implementa:
+- Leitura do sensor de umidade no pino 34 (média de 10 amostras)
+- Controle da bomba no pino 26 (auto durante sessão + override manual)
+- Conexão Wi-Fi e MQTT (HiveMQ Cloud, TLS 8883)
+- Sessão automática de 2 minutos com leituras a cada `intervalo_s` configurável
+- Controle automático da bomba: liga se solo seco (`umidade < 45`), desliga e encerra sessão se ficar úmido
+- Leitura rápida manual via comando `"LER"` (cooldown mínimo 10s)
+- Publicação de resultado da sessão em `sensor/resultado` (`antes`, `depois`, `tempo_bomba`)
+- Publicação de leituras individuais em `sensor_umidade` com campo `tipo` (`"auto"` ou `"manual"`)
+- Assinatura dos tópicos `Bomba`, `sensor/comando`, `sensor/config`
+- LWT para status online/offline em `esp32/status`
