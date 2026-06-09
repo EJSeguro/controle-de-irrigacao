@@ -30,7 +30,13 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SystemProvider>().conectarMqtt();
+      final auth = context.read<AuthService>();
+      final system = context.read<SystemProvider>();
+      final email = auth.currentEmail;
+      if (email != null) {
+        system.inicarSessao(email);
+      }
+      system.conectarMqtt();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

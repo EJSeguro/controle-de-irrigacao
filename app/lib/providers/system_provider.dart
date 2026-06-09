@@ -8,12 +8,29 @@ class SystemProvider extends ChangeNotifier {
   final MqttService _mqtt;
   final DatabaseService _db;
 
+  String? _usuarioEmail;
+
   SystemProvider(this._mqtt, this._db) {
     _setupMqttCallbacks();
-    _carregarDados();
   }
 
-  Future<void> _carregarDados() async {
+  Future<void> inicarSessao(String email) async {
+    _usuarioEmail = email;
+    _leituras.clear();
+    _historicoConsumo.clear();
+    _ultimaLeitura = null;
+    _consumoUltimoCiclo = 0;
+    _resultadoAntes = null;
+    _resultadoDepois = null;
+    _resultadoTempoBomba = null;
+    _sistemaLigado = false;
+    _bombaLigada = false;
+    _bombaDesligadaManual = false;
+    _sessaoAtiva = false;
+    final temDados = await _db.usuarioTemDados(email);
+    if (!temDados) {
+      await _db.sembrarDadosMock(email);
+    }
     await Future.wait([
       _carregarLeituras(),
       _carregarConsumos(),
@@ -23,18 +40,18 @@ class SystemProvider extends ChangeNotifier {
   }
 
   Future<void> _carregarLeituras() async {
-    final saved = await _db.carregarLeituras();
+    final saved = await _db.carregarLeituras(usuarioEmail: _usuarioEmail);
     _leituras.addAll(saved);
     if (_leituras.isNotEmpty) _ultimaLeitura = _leituras.first;
   }
 
   Future<void> _carregarConsumos() async {
-    final saved = await _db.carregarConsumos();
+    final saved = await _db.carregarConsumos(usuarioEmail: _usuarioEmail);
     _historicoConsumo.addAll(saved);
   }
 
   Future<void> _carregarConfig() async {
-    final cfg = await _db.carregarConfigs();
+    final cfg = await _db.carregarConfigs(usuarioEmail: _usuarioEmail);
     _intervaloLeitura = int.tryParse(cfg['intervalo_leitura'] ?? '') ?? 30;
     _unidadeIntervalo = cfg['unidade_intervalo'] ?? 'min';
     _potenciaBomba = double.tryParse(cfg['potencia_bomba'] ?? '') ?? 12;
@@ -150,7 +167,7 @@ class SystemProvider extends ChangeNotifier {
           tempoSegundos: _resultadoTempoBomba!,
         );
         _historicoConsumo.insert(0, record);
-        _db.salvarConsumo(record);
+        _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
       }
 
       notifyListeners();
@@ -184,7 +201,7 @@ class SystemProvider extends ChangeNotifier {
 
     _leituras.insert(0, leitura);
     _ultimaLeitura = leitura;
-    _db.salvarLeitura(leitura);
+    _db.salvarLeitura(leitura, usuarioEmail: _usuarioEmail ?? '');
     notifyListeners();
   }
 
@@ -281,25 +298,25 @@ class SystemProvider extends ChangeNotifier {
         _mqtt.setConfig(valor * 3600);
       }
     }
-    _db.salvarConfig('intervalo_leitura', valor.toString());
+    _db.salvarConfig('intervalo_leitura', valor.toString(), usuarioEmail: _usuarioEmail ?? '');
     notifyListeners();
   }
 
   void setUnidadeIntervalo(String unidade) {
     _unidadeIntervalo = unidade;
-    _db.salvarConfig('unidade_intervalo', unidade);
+    _db.salvarConfig('unidade_intervalo', unidade, usuarioEmail: _usuarioEmail ?? '');
     notifyListeners();
   }
 
   void setPotenciaBomba(double valor) {
     _potenciaBomba = valor;
-    _db.salvarConfig('potencia_bomba', valor.toString());
+    _db.salvarConfig('potencia_bomba', valor.toString(), usuarioEmail: _usuarioEmail ?? '');
     notifyListeners();
   }
 
   void setDiametroTubulacao(double valor) {
     _diametroTubulacao = valor;
-    _db.salvarConfig('diametro_tubulacao', valor.toString());
+    _db.salvarConfig('diametro_tubulacao', valor.toString(), usuarioEmail: _usuarioEmail ?? '');
     notifyListeners();
   }
 }
