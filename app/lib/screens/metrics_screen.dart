@@ -1,28 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/system_provider.dart';
 
-class MetricsScreen extends StatefulWidget {
+class MetricsScreen extends StatelessWidget {
   const MetricsScreen({super.key});
 
-  @override
-  State<MetricsScreen> createState() => _MetricsScreenState();
-}
+  Future<void> _toggleSistema(BuildContext context) async {
+    final system = context.read<SystemProvider>();
 
-class _MetricsScreenState extends State<MetricsScreen> {
-  bool _sistemaLigado = true;
+    if (system.sistemaLigado) {
+      system.desligarSistema();
+      return;
+    }
+
+    final erro = system.configError;
+    if (erro != null) {
+      await showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Configuração incompleta'),
+          content: Text(erro),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    system.toggleSistema();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final system = context.watch<SystemProvider>();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Card(
           child: SwitchListTile(
             title: const Text('Sistema'),
-            value: _sistemaLigado,
-            onChanged: (v) => setState(() => _sistemaLigado = v),
+            value: system.sistemaLigado,
+            onChanged: (_) => _toggleSistema(context),
             secondary: Icon(
-              _sistemaLigado ? Icons.power_settings_new : Icons.power_off,
-              color: _sistemaLigado ? Colors.green : Colors.red,
+              system.sistemaLigado
+                  ? Icons.power_settings_new
+                  : Icons.power_off,
+              color: system.sistemaLigado ? Colors.green : Colors.red,
             ),
           ),
         ),
@@ -72,9 +100,18 @@ class _MetricsScreenState extends State<MetricsScreen> {
                 Text('Status do Sistema',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _statusRow(context, 'Sensor', true),
+                _statusRow('Sensor', true),
                 const SizedBox(height: 8),
-                _statusRow(context, 'Bomba', false),
+                _statusRow('Bomba', system.bombaLigada),
+                if (system.bombaDesligadaManual)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('Bomba desligada manualmente. Ligue-a na tela Bomba para reativar.',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 12,
+                        )),
+                  ),
               ],
             ),
           ),
@@ -102,7 +139,7 @@ class _MetricsScreenState extends State<MetricsScreen> {
     );
   }
 
-  Widget _statusRow(BuildContext context, String label, bool ativo) {
+  Widget _statusRow(String label, bool ativo) {
     return Row(
       children: [
         Icon(Icons.circle, size: 12, color: ativo ? Colors.green : Colors.red),

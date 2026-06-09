@@ -1,13 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/system_provider.dart';
 
 class PumpScreen extends StatelessWidget {
   const PumpScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final system = context.watch<SystemProvider>();
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Card(
+          child: SwitchListTile(
+            title: const Text('Bomba'),
+            subtitle: Text(system.bombaDesligadaManual
+                ? 'Desligada manualmente'
+                : system.bombaLigada
+                    ? 'Ligada'
+                    : 'Desligada'),
+            value: system.bombaLigada,
+            onChanged: (v) {
+              if (v) {
+                system.ligarBomba();
+              } else {
+                system.desligarBombaManual();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Bomba desligada manualmente. Sistema desligado.'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
+            },
+            secondary: Icon(
+              Icons.water_damage,
+              color: system.bombaLigada ? Colors.green : Colors.grey,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -17,10 +50,8 @@ class PumpScreen extends StatelessWidget {
                 Text('Status Atual',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _statusRow(context, 'Bomba', false),
-                const SizedBox(height: 8),
-                _infoRow('Tempo ligada', '—'),
-                _infoRow('Consumo atual', '— L/min'),
+                _infoRow('Tempo ligada', system.bombaLigada ? '2 min 30 s' : '—'),
+                _infoRow('Consumo atual', system.bombaLigada ? '7,5 L/min' : '— L/min'),
               ],
             ),
           ),
@@ -53,8 +84,8 @@ class PumpScreen extends StatelessWidget {
                 Text('Parâmetros para Cálculo',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _infoRow('Potência da bomba', '12 V'),
-                _infoRow('Diâmetro da tubulação', '20 mm'),
+                _infoRow('Potência da bomba', '${system.potenciaBomba.toStringAsFixed(0)} V'),
+                _infoRow('Diâmetro da tubulação', '${system.diametroTubulacao.toStringAsFixed(0)} mm'),
                 _infoRow('Vazão estimada', '~16 L/min'),
               ],
             ),
@@ -74,16 +105,6 @@ class PumpScreen extends StatelessWidget {
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
-    );
-  }
-
-  Widget _statusRow(BuildContext context, String label, bool ativo) {
-    return Row(
-      children: [
-        Icon(Icons.circle, size: 12, color: ativo ? Colors.green : Colors.red),
-        const SizedBox(width: 8),
-        Text('$label: ${ativo ? "Ligada" : "Desligada"}'),
-      ],
     );
   }
 }
