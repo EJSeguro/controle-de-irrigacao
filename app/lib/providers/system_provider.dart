@@ -4,6 +4,18 @@ import '../models/leitura.dart';
 import '../services/database_service.dart';
 import '../services/mqtt_service.dart';
 
+class ConsumoRecord {
+  final DateTime data;
+  final double litros;
+  final int tempoSegundos;
+
+  ConsumoRecord({
+    required this.data,
+    required this.litros,
+    required this.tempoSegundos,
+  });
+}
+
 class SystemProvider extends ChangeNotifier {
   final MqttService _mqtt;
   final DatabaseService _db;
@@ -39,6 +51,9 @@ class SystemProvider extends ChangeNotifier {
   final List<Leitura> _leituras = [];
   Leitura? _ultimaLeitura;
 
+  final List<ConsumoRecord> _historicoConsumo = [];
+  double _consumoUltimoCiclo = 0;
+
   bool get sistemaLigado => _sistemaLigado;
   bool get bombaLigada => _bombaLigada;
   bool get bombaDesligadaManual => _bombaDesligadaManual;
@@ -54,6 +69,35 @@ class SystemProvider extends ChangeNotifier {
   int? get resultadoAntes => _resultadoAntes;
   int? get resultadoDepois => _resultadoDepois;
   int? get resultadoTempoBomba => _resultadoTempoBomba;
+  double get consumoUltimoCiclo => _consumoUltimoCiclo;
+  List<ConsumoRecord> get historicoConsumo => List.unmodifiable(_historicoConsumo);
+
+  static const double _coeficienteVazao = 0.0667;
+  double get vazaoEstimada => _potenciaBomba * _diametroTubulacao * _coeficienteVazao;
+
+  double get consumoHoje {
+    final hoje = DateTime.now();
+    return _historicoConsumo
+        .where((r) =>
+            r.data.year == hoje.year &&
+            r.data.month == hoje.month &&
+            r.data.day == hoje.day)
+        .fold(0, (sum, r) => sum + r.litros);
+  }
+
+  double get consumoMes {
+    final hoje = DateTime.now();
+    return _historicoConsumo
+        .where((r) => r.data.year == hoje.year && r.data.month == hoje.month)
+        .fold(0, (sum, r) => sum + r.litros);
+  }
+
+  double get consumoAno {
+    final hoje = DateTime.now();
+    return _historicoConsumo
+        .where((r) => r.data.year == hoje.year)
+        .fold(0, (sum, r) => sum + r.litros);
+  }
 
   bool get configValida =>
       _intervaloLeitura > 0 && _potenciaBomba > 0 && _diametroTubulacao > 0;
@@ -86,6 +130,16 @@ class SystemProvider extends ChangeNotifier {
       _resultadoDepois = data['depois'] as int?;
       _resultadoTempoBomba = data['tempo_bomba'] as int?;
       _sessaoAtiva = false;
+
+      if (_resultadoTempoBomba != null) {
+        _consumoUltimoCiclo = vazaoEstimada * _resultadoTempoBomba! / 60;
+        _historicoConsumo.insert(0, ConsumoRecord(
+          data: DateTime.now(),
+          litros: _consumoUltimoCiclo,
+          tempoSegundos: _resultadoTempoBomba!,
+        ));
+      }
+
       notifyListeners();
     };
 
