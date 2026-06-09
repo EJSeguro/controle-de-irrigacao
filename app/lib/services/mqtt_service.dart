@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:mqtt_client/mqtt_client.dart';
 import 'mqtt_client_platform.dart';
 
@@ -8,8 +8,8 @@ class MqttService {
   static const String host = 'bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud';
   static const int port = 8883;
   static const String webHost =
-      'wss://bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud:443/mqtt';
-  static const int webPort = 443;
+      'wss://bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud:8884/mqtt';
+  static const int webPort = 8884;
   static const String user = 'sensor_umidade';
   static const String pass = 'Senha1234567890';
   static const String clientId = 'AppControleIrrigacao';
@@ -65,7 +65,8 @@ class MqttService {
       _conectado = false;
       onConexaoMqtt?.call(false);
       return false;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('MQTT connection error: $e');
       _conectado = false;
       onConexaoMqtt?.call(false);
       return false;
