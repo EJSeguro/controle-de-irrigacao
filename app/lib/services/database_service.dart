@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:crypto/crypto.dart';
 import '../models/leitura.dart';
 
 class ConsumoRecord {
@@ -62,7 +64,7 @@ class DatabaseService {
     final path = join(await getDatabasesPath(), 'irrigacao.db');
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE leituras (
@@ -91,6 +93,7 @@ class DatabaseService {
             PRIMARY KEY (chave, usuario_email)
           )
         ''');
+        await _criarTabelaUsuarios(db);
       },
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) {
@@ -128,6 +131,9 @@ class DatabaseService {
           ''');
           await db.execute('DROP TABLE config');
           await db.execute('ALTER TABLE config_nova RENAME TO config');
+        }
+        if (oldVersion < 4) {
+          await _criarTabelaUsuarios(db);
         }
       },
     );
@@ -287,5 +293,52 @@ class DatabaseService {
     if (umidade < 65) return 'Ideal';
     if (umidade < 85) return 'Úmido';
     return 'Encharcado';
+  }
+
+  // ── Tabela de usuários ────────────────────────────────────
+
+  static Future<void> _criarTabelaUsuarios(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS usuarios (
+        email TEXT PRIMARY KEY,
+        senha_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        criado_em TEXT NOT NULL
+      )
+    ''');
+  }
+
+  static String gerarSalt() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    return base64Encode(bytes);
+  }
+
+  static String hashSenha(String senha, String salt) {
+    final salted = utf8.encode(salt + senha);
+    return base64Encode(sha256.convert(salted).bytes);
+  }
+
+  static bool verificarSenha(String senha, String salt, String hash) {
+    return hashSenha(senha, salt) == hash;
+  }
+
+  Future<void> criarUsuario(String email, String senhaHash, String salt) async {
+    if (_isWeb) return;
+    final db = await database;
+    await db.insert('usuarios', {
+      'email': email,
+      'senha_hash': senhaHash,
+      'salt': salt,
+      'criado_em': DateTime.now().toIso8601String(),
+    });
+  }
+
+  Future<Map<String, dynamic>?> carregarUsuario(String email) async {
+    if (_isWeb) return null;
+    final db = await database;
+    final rows = await db.query('usuarios',
+        where: 'email = ?', whereArgs: [email]);
+    return rows.isNotEmpty ? rows.first : null;
   }
 }

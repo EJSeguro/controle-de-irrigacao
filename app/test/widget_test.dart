@@ -4,12 +4,13 @@ import 'package:provider/provider.dart';
 
 import 'package:app/main.dart';
 import 'package:app/services/auth_service.dart';
+import 'package:app/services/database_service.dart';
 
 void main() {
   testWidgets('App shows loading then auth screen', (WidgetTester tester) async {
     await tester.pumpWidget(
       ChangeNotifierProvider(
-        create: (_) => AuthService(),
+        create: (_) => AuthService(DatabaseService()),
         child: const IrrigacaoApp(),
       ),
     );

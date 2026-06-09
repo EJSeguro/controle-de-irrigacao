@@ -9,11 +9,12 @@ import 'services/mqtt_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  final db = DatabaseService();
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthService()..init()),
-        ChangeNotifierProvider(create: (_) => SystemProvider(MqttService(), DatabaseService())),
+        ChangeNotifierProvider(create: (_) => AuthService(db)..init()),
+        ChangeNotifierProvider(create: (_) => SystemProvider(MqttService(), db)),
       ],
       child: const IrrigacaoApp(),
     ),
