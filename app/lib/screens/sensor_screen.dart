@@ -1,29 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/system_provider.dart';
 
-class SensorScreen extends StatefulWidget {
+class SensorScreen extends StatelessWidget {
   const SensorScreen({super.key});
 
   @override
-  State<SensorScreen> createState() => _SensorScreenState();
-}
-
-class _SensorScreenState extends State<SensorScreen> {
-  bool _sensorLigado = false;
-
-  @override
   Widget build(BuildContext context) {
+    final system = context.watch<SystemProvider>();
+    final ultima = system.ultimaLeitura;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Card(
           child: SwitchListTile(
             title: const Text('Sensor'),
-            subtitle: Text(_sensorLigado ? 'Fazendo leitura...' : 'Desligado'),
-            value: _sensorLigado,
-            onChanged: (v) => setState(() => _sensorLigado = v),
+            subtitle: Text(system.sessaoAtiva
+                ? 'Sessão ativa'
+                : system.mqttConectado
+                    ? 'Aguardando comando'
+                    : 'MQTT desconectado'),
+            value: system.sessaoAtiva,
+            onChanged: (v) {
+              if (v) {
+                system.toggleSistema();
+              } else {
+                system.desligarSistema();
+              }
+            },
             secondary: Icon(
               Icons.sensors,
-              color: _sensorLigado ? Colors.green : Colors.grey,
+              color: system.sessaoAtiva ? Colors.green : Colors.grey,
             ),
           ),
         ),
@@ -37,10 +45,15 @@ class _SensorScreenState extends State<SensorScreen> {
                 Text('Última Leitura',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _infoRow('Data', '08/06/2026'),
-                _infoRow('Hora', '19:30'),
-                _infoRow('Umidade', '45%'),
-                _infoRow('Status do solo', 'Seco'),
+                if (ultima != null) ...[
+                  _infoRow('Data/hora', ultima.horaFormatada),
+                  _infoRow('Umidade', '${ultima.umidade}%'),
+                  _infoRow('Status do solo', ultima.statusSolo),
+                  _infoRow('Tipo', ultima.tipo == 'manual' ? 'Manual' : 'Automática'),
+                ] else ...[
+                  Text('Nenhuma leitura recebida.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+                ],
               ],
             ),
           ),
@@ -52,12 +65,33 @@ class _SensorScreenState extends State<SensorScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Médias da Última Sessão',
+                Text('Última Sessão',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _infoRow('Umidade antes de regar', '20%'),
-                _infoRow('Umidade depois de regar', '65%'),
-                _infoRow('Tempo bomba ligada', '45 seg'),
+                if (system.resultadoAntes != null) ...[
+                  _infoRow('Umidade antes de regar', '${system.resultadoAntes}%'),
+                  _infoRow('Umidade depois de regar', '${system.resultadoDepois}%'),
+                  _infoRow('Tempo bomba ligada', '${system.resultadoTempoBomba ?? 0} seg'),
+                ] else ...[
+                  Text('Nenhuma sessão concluída ainda.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.outline)),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Conexão', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
+                _statusRow('MQTT', system.mqttConectado),
+                const SizedBox(height: 8),
+                _statusRow('ESP32', system.espOnline),
               ],
             ),
           ),
@@ -76,6 +110,16 @@ class _SensorScreenState extends State<SensorScreen> {
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
+    );
+  }
+
+  Widget _statusRow(String label, bool ativo) {
+    return Row(
+      children: [
+        Icon(Icons.circle, size: 12, color: ativo ? Colors.green : Colors.red),
+        const SizedBox(width: 8),
+        Text('$label: ${ativo ? "Conectado" : "Desconectado"}'),
+      ],
     );
   }
 }

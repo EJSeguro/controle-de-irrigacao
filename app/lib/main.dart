@@ -4,6 +4,8 @@ import 'providers/system_provider.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/auth_service.dart';
+import 'services/database_service.dart';
+import 'services/mqtt_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,7 +13,7 @@ void main() {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()..init()),
-        ChangeNotifierProvider(create: (_) => SystemProvider()),
+        ChangeNotifierProvider(create: (_) => SystemProvider(MqttService(), DatabaseService())),
       ],
       child: const IrrigacaoApp(),
     ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/system_provider.dart';
 import '../services/auth_service.dart';
 import 'metrics_screen.dart';
 import 'sensor_screen.dart';
@@ -26,13 +27,30 @@ class _HomeScreenState extends State<HomeScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SystemProvider>().conectarMqtt();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
+    final system = context.watch<SystemProvider>();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Controle de Irrigação'),
         actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Icon(
+              Icons.circle,
+              size: 12,
+              color: system.mqttConectado ? Colors.green : Colors.red,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sair',

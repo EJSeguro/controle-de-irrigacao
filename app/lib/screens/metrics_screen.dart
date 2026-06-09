@@ -135,7 +135,9 @@ class MetricsScreen extends StatelessWidget {
                 Text('Status do Sistema',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _statusRow('Sensor', true),
+                _statusRow('MQTT', system.mqttConectado),
+                const SizedBox(height: 8),
+                _statusRow('ESP32', system.espOnline),
                 const SizedBox(height: 8),
                 _statusRow('Bomba', system.bombaLigada),
                 if (system.bombaDesligadaManual)
