@@ -158,8 +158,7 @@ class SystemProvider extends ChangeNotifier {
     final referencia = _ultimaLeitura?.data ?? _inicioSessao;
     if (referencia == null) return;
     final inatividade = DateTime.now().difference(referencia);
-    final tolerancia = Duration(
-        seconds: (_intervaloSegundos + 60).clamp(120, 3600));
+    final tolerancia = Duration(seconds: _intervaloSegundos + 120);
     if (inatividade >= tolerancia) {
       _finalizarSessao();
     }
