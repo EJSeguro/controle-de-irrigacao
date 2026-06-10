@@ -92,7 +92,6 @@ class AuthService extends ChangeNotifier {
     if (!DatabaseService.verificarSenha(password, salt, hash)) {
       throw Exception('Usuário ou senha inválidos.');
     }
-    await _db.criarUsuario(key, hash, salt);
     _currentEmail = key;
     await _salvarSessao();
     notifyListeners();
