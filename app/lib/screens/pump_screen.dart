@@ -91,7 +91,7 @@ class PumpScreen extends StatelessWidget {
                 Text('Parâmetros para Cálculo',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
-                _infoRow('Potência da bomba', '${system.potenciaBomba.toStringAsFixed(0)} V'),
+                _infoRow('Potência da bomba', '${system.potenciaBomba.toStringAsFixed(0)} W'),
                 _infoRow('Diâmetro da tubulação', '${system.diametroTubulacao.toStringAsFixed(0)} mm'),
                 _infoRow('Vazão estimada', '~${system.vazaoEstimada.toStringAsFixed(1)} L/min'),
               ],

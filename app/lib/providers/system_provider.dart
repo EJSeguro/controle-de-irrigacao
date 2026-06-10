@@ -108,8 +108,8 @@ class SystemProvider extends ChangeNotifier {
   double get consumoUltimoCiclo => _consumoUltimoCiclo;
   List<ConsumoRecord> get historicoConsumo => List.unmodifiable(_historicoConsumo);
 
-  static const double _coeficienteVazao = 0.0667;
-  double get vazaoEstimada => _potenciaBomba * _diametroTubulacao * _coeficienteVazao;
+  static const double _coeficienteVazao = 0.3;
+  double get vazaoEstimada => _coeficienteVazao * _potenciaBomba * sqrt(_diametroTubulacao / 20.0);
 
   double get consumoHoje {
     final hoje = DateTime.now();

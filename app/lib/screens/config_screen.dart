@@ -108,7 +108,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 TextFormField(
                   controller: _potenciaCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Potência (V)',
+                    labelText: 'Potência (W)',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
