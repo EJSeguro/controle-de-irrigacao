@@ -4,7 +4,10 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:mqtt_client/mqtt_client.dart';
 import 'mqtt_client_platform.dart';
 
+/// Serviço de comunicação MQTT com o broker HiveMQ Cloud.
+/// Gerencia conexão TLS/WebSocket, assinatura de tópicos e callbacks de mensagens.
 class MqttService {
+  // ── Credenciais do broker ─────────────────────────────────
   static const String host = 'bcf945890f214ca89c3846609fd07a6b.s1.eu.hivemq.cloud';
   static const int port = 8883;
   static const String webHost =
@@ -21,18 +24,21 @@ class MqttService {
   static const String topicoResultado = 'sensor/resultado';
   static const String topicoConfig = 'sensor/config';
 
+  // ── Estado interno ────────────────────────────────────────
   MqttClient? _client;
   StreamSubscription? _sub;
 
   bool _conectado = false;
   bool get conectado => _conectado;
 
+  // ── Callbacks expostos ────────────────────────────────────
   void Function(Map<String, dynamic> payload)? onLeituraSensor;
   void Function(Map<String, dynamic> payload)? onResultadoSessao;
   void Function(String status)? onStatusBomba;
   void Function(bool online)? onConexaoEsp;
   void Function(bool conectado)? onConexaoMqtt;
 
+  // ── Conexão ───────────────────────────────────────────────
   Future<bool> connect() async {
     if (kIsWeb) {
       _client = createMqttClient(webHost, clientId);
@@ -81,6 +87,7 @@ class MqttService {
     return true;
   }
 
+  // ── Assinatura de tópicos ────────────────────────────────
   void _inscreverTopicos() {
     if (_client == null) return;
     _client!.subscribe(topicoSensor, MqttQos.atMostOnce);
@@ -89,11 +96,13 @@ class MqttService {
     _client!.subscribe(topicoResultado, MqttQos.atMostOnce);
   }
 
+  // ── Escuta de mensagens ──────────────────────────────────
   void _escutarMensagens() {
     _sub?.cancel();
     _sub = _client?.updates?.listen(_processarMensagem);
   }
 
+  // ── Roteamento de mensagens por tópico ───────────────────
   void _processarMensagem(List<MqttReceivedMessage<MqttMessage>> messages) {
     for (final msg in messages) {
       final topic = msg.topic;
@@ -114,6 +123,7 @@ class MqttService {
     }
   }
 
+  // ── Parse de mensagens ───────────────────────────────────
   void _processarSensor(String texto) {
     try {
       final data = jsonDecode(texto) as Map<String, dynamic>;
@@ -128,6 +138,7 @@ class MqttService {
     } catch (_) {}
   }
 
+  // ── Publicação ───────────────────────────────────────────
   void sendComando(String comando) {
     _publicar(topicoComando, comando);
   }
@@ -141,6 +152,7 @@ class MqttService {
     _publicar(topicoConfig, payload);
   }
 
+  // ── Publicação no broker ─────────────────────────────────
   void _publicar(String topico, String mensagem, {bool retain = false}) {
     if (_client == null || !_conectado) return;
     final builder = MqttClientPayloadBuilder();
@@ -149,6 +161,7 @@ class MqttService {
         retain: retain);
   }
 
+  // ── Desconexão ───────────────────────────────────────────
   void disconnect() {
     _sub?.cancel();
     _client?.disconnect();

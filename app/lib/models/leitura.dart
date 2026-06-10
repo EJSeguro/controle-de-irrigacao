@@ -1,3 +1,4 @@
+/// Leitura de umidade do solo recebida do sensor (manual ou automática).
 class Leitura {
   final DateTime data;
   final int umidade;

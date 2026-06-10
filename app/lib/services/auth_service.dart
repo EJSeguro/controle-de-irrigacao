@@ -3,13 +3,19 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'database_service.dart';
 
+/// Serviço de autenticação local com SharedPreferences.
+/// Gerencia registro, login, logout e persistência de sessão.
+/// Hash SHA-256 + salt. Mensagens de erro genéricas (LGPD).
 class AuthService extends ChangeNotifier {
   final DatabaseService _db;
 
   AuthService(this._db);
 
+  // ── Chaves do SharedPreferences ──────────────────────────
   static const _key = 'accounts';
   static const _sessionKey = 'current_email';
+
+  // ── Estado interno ───────────────────────────────────────
   Map<String, String> _accounts = {};
   String? _currentEmail;
   bool _loading = true;
@@ -18,6 +24,7 @@ class AuthService extends ChangeNotifier {
   bool get isAuthenticated => _currentEmail != null;
   bool get isLoading => _loading;
 
+  // ── Inicialização ────────────────────────────────────────
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_key);
@@ -30,6 +37,7 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Migração de senhas planas para hash ──────────────────
   void _migrarSenhas() {
     bool alterou = false;
     for (final entry in _accounts.entries.toList()) {
@@ -44,6 +52,7 @@ class AuthService extends ChangeNotifier {
     if (alterou) _salvar();
   }
 
+  // ── Persistência ─────────────────────────────────────────
   Future<void> _salvar() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(_accounts));
@@ -58,6 +67,7 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  // ── Registro ─────────────────────────────────────────────
   Future<String> register(String email, String password) async {
     final key = email.trim().toLowerCase();
     if (_accounts.containsKey(key)) {
@@ -77,6 +87,7 @@ class AuthService extends ChangeNotifier {
     return key;
   }
 
+  // ── Login ────────────────────────────────────────────────
   Future<String> login(String email, String password) async {
     final key = email.trim().toLowerCase();
     final stored = _accounts[key];

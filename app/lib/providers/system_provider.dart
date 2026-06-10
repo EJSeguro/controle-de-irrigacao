@@ -4,6 +4,8 @@ import '../models/leitura.dart';
 import '../services/database_service.dart';
 import '../services/mqtt_service.dart';
 
+/// Provedor central de estado do sistema de irrigação.
+/// Gerencia conexão MQTT, regras de négocio, Sessões, leituras, bomba e consumo.
 class SystemProvider extends ChangeNotifier {
   final MqttService _mqtt;
   final DatabaseService _db;
@@ -12,11 +14,15 @@ class SystemProvider extends ChangeNotifier {
 
   static const int _thresholdSeco = 45;
 
+  bool _sessaoFinalizando = false;
+
+  // ── Construtor ────────────────────────────────────────────
   SystemProvider(this._mqtt, this._db) {
     _setupMqttCallbacks();
     _timerSessao();
   }
 
+  // ── Inicialização da sessão do usuário ────────────────────
   Future<void> inicarSessao(String email) async {
     _usuarioEmail = email;
     _leituras.clear();
@@ -38,6 +44,7 @@ class SystemProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Carga de dados do banco ───────────────────────────────
   Future<void> _carregarLeituras() async {
     final saved = await _db.carregarLeituras(usuarioEmail: _usuarioEmail);
     _leituras.addAll(saved);
@@ -61,34 +68,43 @@ class SystemProvider extends ChangeNotifier {
     _consumoUltimoCiclo = double.tryParse(cfg['sessao_consumo'] ?? '') ?? 0;
   }
 
+  // ── Estado da sessão ──────────────────────────────────────
   bool _sistemaLigado = false;
   bool _bombaLigada = false;
   bool _bombaDesligadaManual = false;
   bool _sessaoAtiva = false;
+
+  // ── Estado da conexão ─────────────────────────────────────
   bool _mqttConectado = false;
   bool _mqttConectando = false;
   bool _espOnline = false;
 
+  // ── Parâmetros do sistema ─────────────────────────────────
   int _intervaloLeitura = 30;
   String _unidadeIntervalo = 'min';
   double _potenciaBomba = 12;
   double _diametroTubulacao = 20;
 
+  // ── Resultados da última sessão ───────────────────────────
   int? _resultadoAntes;
   int? _resultadoDepois;
   int? _resultadoTempoBomba;
 
+  // ── Leituras do sensor ────────────────────────────────────
   final List<Leitura> _leituras = [];
   Leitura? _ultimaLeitura;
 
+  // ── Consumo de água ───────────────────────────────────────
   final List<ConsumoRecord> _historicoConsumo = [];
   double _consumoUltimoCiclo = 0;
 
+  // ── Acumuladores temporários da sessão ────────────────────
   DateTime? _inicioSessao;
   DateTime? _bombaLigadaDesde;
   int _acumuladoTempoBomba = 0;
   double _acumuladoConsumo = 0;
 
+  // ── Getters de estado ─────────────────────────────────────
   bool get sistemaLigado => _sistemaLigado;
   bool get bombaLigada => _bombaLigada;
   bool get bombaDesligadaManual => _bombaDesligadaManual;
@@ -108,9 +124,11 @@ class SystemProvider extends ChangeNotifier {
   double get consumoUltimoCiclo => _consumoUltimoCiclo;
   List<ConsumoRecord> get historicoConsumo => List.unmodifiable(_historicoConsumo);
 
+  // ── Fórmula de vazão ─────────────────────────────────────
   static const double _coeficienteVazao = 0.3;
   double get vazaoEstimada => _coeficienteVazao * _potenciaBomba * sqrt(_diametroTubulacao / 20.0);
 
+  // ── Agregadores de consumo ────────────────────────────────
   double get consumoHoje {
     final hoje = DateTime.now();
     return _historicoConsumo
@@ -145,6 +163,7 @@ class SystemProvider extends ChangeNotifier {
     return null;
   }
 
+  // ── Timer de sessão ──────────────────────────────────────
   void _timerSessao() {
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 5));
@@ -164,6 +183,7 @@ class SystemProvider extends ChangeNotifier {
     }
   }
 
+  // ── Callbacks MQTT ───────────────────────────────────────
   void _setupMqttCallbacks() {
     _mqtt.onLeituraSensor = (data) {
       final umidade = data['umidade'] as int? ?? 0;
@@ -197,8 +217,26 @@ class SystemProvider extends ChangeNotifier {
       _mqttConectado = conectado;
       notifyListeners();
     };
+
+    _mqtt.onResultadoSessao = (data) {
+      if (!_sessaoAtiva || _sessaoFinalizando) return;
+
+      final antes = data['antes'] as int?;
+      final depois = data['depois'] as int?;
+      final tempo = data['tempo_bomba'] as int?;
+
+      if (antes != null) _resultadoAntes = antes;
+      if (depois != null) _resultadoDepois = depois;
+      if (tempo != null) {
+        _resultadoTempoBomba = tempo;
+        _consumoUltimoCiclo = vazaoEstimada * tempo / 60;
+      }
+
+      _finalizarSessao();
+    };
   }
 
+  // ── Conversores de intervalo ─────────────────────────────
   int get _intervaloSegundos {
     if (_unidadeIntervalo == 'h') return _intervaloLeitura * 3600;
     return _intervaloLeitura * 60;
@@ -210,14 +248,13 @@ class SystemProvider extends ChangeNotifier {
     }
   }
 
+  // ── Regra de negócio principal ───────────────────────────
   void _aplicarRegraDeNegocio(int umidade) {
     if (!_sessaoAtiva) return;
 
-    _resultadoAntes ??= umidade;
-
     if (umidade < _thresholdSeco) {
       if (!_bombaLigada && !_bombaDesligadaManual) {
-        _ligarBombaInterno();
+        _ligarBombaInterno(umidade);
         _enviarIntervalo(10);
       }
     } else {
@@ -233,6 +270,7 @@ class SystemProvider extends ChangeNotifier {
     }
   }
 
+  // ── Acumuladores de consumo ──────────────────────────────
   void _acumularConsumo() {
     if (_bombaLigadaDesde == null) return;
     final segundos = DateTime.now().difference(_bombaLigadaDesde!).inSeconds;
@@ -241,14 +279,20 @@ class SystemProvider extends ChangeNotifier {
     _bombaLigadaDesde = null;
   }
 
+  // ── Finalização da sessão ────────────────────────────────
   void _finalizarSessao() {
+    if (_sessaoFinalizando) return;
+    _sessaoFinalizando = true;
+
     if (_bombaLigada) {
       if (_mqttConectado) _mqtt.setBomba(false);
       _acumularConsumo();
     }
 
-    _resultadoTempoBomba = _acumuladoTempoBomba;
-    _consumoUltimoCiclo = _acumuladoConsumo;
+    if (_resultadoTempoBomba == null) {
+      _resultadoTempoBomba = _acumuladoTempoBomba;
+      _consumoUltimoCiclo = _acumuladoConsumo;
+    }
     _acumuladoTempoBomba = 0;
     _acumuladoConsumo = 0;
     _bombaLigadaDesde = null;
@@ -268,9 +312,11 @@ class SystemProvider extends ChangeNotifier {
     _sessaoAtiva = false;
     _sistemaLigado = false;
     _inicioSessao = null;
+    _sessaoFinalizando = false;
     notifyListeners();
   }
 
+  // ── Persistência dos resultados ──────────────────────────
   void _salvarResultadoSessao() {
     final email = _usuarioEmail ?? '';
     _db.salvarConfig('sessao_antes', _resultadoAntes?.toString() ?? '', usuarioEmail: email);
@@ -279,6 +325,7 @@ class SystemProvider extends ChangeNotifier {
     _db.salvarConfig('sessao_consumo', _consumoUltimoCiclo.toString(), usuarioEmail: email);
   }
 
+  // ── Inserção de leitura ──────────────────────────────────
   void _adicionarLeitura(int umidade, String tipo, {String? statusSolo}) {
     String status = statusSolo ?? _calcularStatus(umidade);
 
@@ -295,6 +342,7 @@ class SystemProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Classificação do solo ────────────────────────────────
   String _calcularStatus(int umidade) {
     if (umidade < 20) return 'Muito seco';
     if (umidade < 45) return 'Seco';
@@ -303,6 +351,7 @@ class SystemProvider extends ChangeNotifier {
     return 'Encharcado';
   }
 
+  // ── Conexão MQTT ─────────────────────────────────────────
   Future<void> conectarMqtt() async {
     _mqttConectando = true;
     notifyListeners();
@@ -321,6 +370,7 @@ class SystemProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Leitura rápida manual ────────────────────────────────
   void realizarLeituraRapida() {
     if (!_mqttConectado) {
       _adicionarLeitura(Random().nextInt(81) + 5, 'manual');
@@ -329,6 +379,7 @@ class SystemProvider extends ChangeNotifier {
     _mqtt.sendComando('LER');
   }
 
+  // ── Controle do sistema ──────────────────────────────────
   void toggleSistema() {
     if (!_mqttConectado) {
       _sistemaLigado = !_sistemaLigado;
@@ -339,16 +390,7 @@ class SystemProvider extends ChangeNotifier {
 
     if (_sistemaLigado) {
       _mqtt.sendComando('DESLIGAR');
-      _sistemaLigado = false;
-      _sessaoAtiva = false;
-      _bombaLigada = false;
-      _bombaLigadaDesde = null;
-      _inicioSessao = null;
-      _resultadoAntes = null;
-      _resultadoDepois = null;
-      _resultadoTempoBomba = null;
-      _acumuladoTempoBomba = 0;
-      _acumuladoConsumo = 0;
+      _finalizarSessao();
       _bombaDesligadaManual = true;
     } else {
       _mqtt.sendComando('LIGAR');
@@ -365,25 +407,19 @@ class SystemProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Desligamento do sistema ──────────────────────────────
   void desligarSistema() {
     if (_mqttConectado) {
       _mqtt.sendComando('DESLIGAR');
     }
-    _sistemaLigado = false;
-    _sessaoAtiva = false;
-    _bombaLigada = false;
-    _bombaLigadaDesde = null;
-    _inicioSessao = null;
-    _resultadoAntes = null;
-    _resultadoDepois = null;
-    _resultadoTempoBomba = null;
-    _acumuladoTempoBomba = 0;
-    _acumuladoConsumo = 0;
+    _finalizarSessao();
     _bombaDesligadaManual = true;
     notifyListeners();
   }
 
-  void _ligarBombaInterno() {
+  // ── Acionamento interno da bomba ─────────────────────────
+  void _ligarBombaInterno(int umidade) {
+    _resultadoAntes = umidade;
     _bombaDesligadaManual = false;
     _bombaLigada = true;
     _bombaLigadaDesde = DateTime.now();
@@ -392,8 +428,10 @@ class SystemProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Acionamento manual da bomba ──────────────────────────
   void ligarBomba() {
     if (!_sessaoAtiva) return;
+    _resultadoAntes = _ultimaLeitura?.umidade ?? _resultadoAntes;
     _bombaDesligadaManual = false;
     _bombaLigada = true;
     _bombaLigadaDesde = DateTime.now();
@@ -402,6 +440,7 @@ class SystemProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Desligamento manual da bomba ─────────────────────────
   void desligarBombaManual() {
     _bombaDesligadaManual = true;
     _bombaLigada = false;
@@ -411,6 +450,7 @@ class SystemProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Configurações persistidas ────────────────────────────
   void setIntervalo(int valor) {
     _intervaloLeitura = valor;
     if (_mqttConectado) {

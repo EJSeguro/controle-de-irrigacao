@@ -6,6 +6,7 @@ import 'package:path/path.dart';
 import 'package:crypto/crypto.dart';
 import '../models/leitura.dart';
 
+/// Registro de consumo de água de um ciclo de irrigação.
 class ConsumoRecord {
   final DateTime data;
   final double litros;
@@ -30,7 +31,11 @@ class _ConsumoEntry {
   _ConsumoEntry(this.record, this.email);
 }
 
+/// Serviço de banco de dados SQLite com persistência local.
+/// Tabelas: leituras, consumo, config, usuarios.
+/// Fallback para memória estática em ambiente web.
 class DatabaseService {
+  // ── Instância e fallback web ──────────────────────────────
   static Database? _db;
   static List<_LeituraEntry>? _memoria;
   static List<_ConsumoEntry>? _memConsumo;
@@ -60,6 +65,7 @@ class DatabaseService {
     return _memConfig!;
   }
 
+  // ── Inicialização do banco ───────────────────────────────
   Future<Database> _init() async {
     final path = join(await getDatabasesPath(), 'irrigacao.db');
     return openDatabase(
@@ -139,6 +145,7 @@ class DatabaseService {
     );
   }
 
+  // ── Leituras ─────────────────────────────────────────────
   Future<void> salvarLeitura(Leitura leitura, {String usuarioEmail = ''}) async {
     if (_isWeb) {
       _mem.insert(0, _LeituraEntry(leitura, usuarioEmail));
@@ -154,6 +161,7 @@ class DatabaseService {
     });
   }
 
+  // ── Carga de leituras ────────────────────────────────────
   Future<List<Leitura>> carregarLeituras({String? usuarioEmail}) async {
     if (_isWeb) {
       var items = _mem;
@@ -177,6 +185,7 @@ class DatabaseService {
     }).toList();
   }
 
+  // ── Consumo ──────────────────────────────────────────────
   Future<void> salvarConsumo(ConsumoRecord record, {String usuarioEmail = ''}) async {
     if (_isWeb) {
       _memCons.insert(0, _ConsumoEntry(record, usuarioEmail));
@@ -191,6 +200,7 @@ class DatabaseService {
     });
   }
 
+  // ── Carga de consumos ────────────────────────────────────
   Future<List<ConsumoRecord>> carregarConsumos({String? usuarioEmail}) async {
     if (_isWeb) {
       var items = _memCons;
@@ -213,6 +223,7 @@ class DatabaseService {
     }).toList();
   }
 
+  // ── Configurações ────────────────────────────────────────
   Future<void> salvarConfig(String chave, String valor, {String usuarioEmail = ''}) async {
     if (_isWeb) {
       _memCfg['$usuarioEmail:$chave'] = valor;
@@ -226,6 +237,7 @@ class DatabaseService {
     );
   }
 
+  // ── Carga de configurações ───────────────────────────────
   Future<Map<String, String>> carregarConfigs({String? usuarioEmail}) async {
     if (_isWeb) {
       if (usuarioEmail == null) return Map.from(_memCfg);
@@ -244,6 +256,7 @@ class DatabaseService {
     return {for (final r in rows) r['chave'] as String: r['valor'] as String};
   }
 
+  // ── Dados mockados para novos usuários ───────────────────
   Future<bool> usuarioTemDados(String usuarioEmail) async {
     if (_isWeb) {
       return _mem.any((e) => e.email == usuarioEmail);
@@ -296,6 +309,7 @@ class DatabaseService {
   }
 
   // ── Tabela de usuários ────────────────────────────────────
+  // SQL: usuarios(email PK, senha_hash, salt, criado_em)
 
   static Future<void> _criarTabelaUsuarios(Database db) async {
     await db.execute('''
@@ -308,6 +322,7 @@ class DatabaseService {
     ''');
   }
 
+  // ── Utilitários de hash ──────────────────────────────────
   static String gerarSalt() {
     final random = Random.secure();
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
