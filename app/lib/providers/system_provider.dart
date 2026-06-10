@@ -393,6 +393,7 @@ class SystemProvider extends ChangeNotifier {
   }
 
   void ligarBomba() {
+    if (!_sessaoAtiva) return;
     _bombaDesligadaManual = false;
     _bombaLigada = true;
     _bombaLigadaDesde = DateTime.now();

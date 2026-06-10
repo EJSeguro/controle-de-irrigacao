@@ -22,14 +22,25 @@ class PumpScreen extends StatelessWidget {
         Card(
           child: SwitchListTile(
             title: const Text('Bomba'),
-            subtitle: Text(system.bombaDesligadaManual
-                ? 'Desligada manualmente'
-                : system.bombaLigada
-                    ? 'Ligada'
-                    : 'Desligada'),
+            subtitle: Text(!system.sessaoAtiva
+                ? 'Sistema desligado'
+                : system.bombaDesligadaManual
+                    ? 'Desligada manualmente'
+                    : system.bombaLigada
+                        ? 'Ligada'
+                        : 'Desligada'),
             value: system.bombaLigada,
             onChanged: (v) {
               if (v) {
+                if (!system.sessaoAtiva) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Ligue o sistema na aba Sensor primeiro.'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
                 system.ligarBomba();
               } else {
                 system.desligarBombaManual();
