@@ -11,7 +11,7 @@ class SystemProvider extends ChangeNotifier {
   String? _usuarioEmail;
 
   static const int _thresholdSeco = 45;
-  static const Duration _duracaoMaxSessao = Duration(minutes: 2);
+  static const Duration _timeoutInatividade = Duration(minutes: 2);
 
   SystemProvider(this._mqtt, this._db) {
     _setupMqttCallbacks();
@@ -155,8 +155,10 @@ class SystemProvider extends ChangeNotifier {
   }
 
   void _verificarTimeoutSessao() {
-    if (!_sessaoAtiva || _inicioSessao == null) return;
-    if (DateTime.now().difference(_inicioSessao!) >= _duracaoMaxSessao) {
+    if (!_sessaoAtiva) return;
+    final referencia = _ultimaLeitura?.data ?? _inicioSessao;
+    if (referencia == null) return;
+    if (DateTime.now().difference(referencia) >= _timeoutInatividade) {
       _finalizarSessao();
     }
   }
@@ -185,9 +187,6 @@ class SystemProvider extends ChangeNotifier {
 
     _mqtt.onConexaoEsp = (online) {
       _espOnline = online;
-      if (!online && _sessaoAtiva) {
-        _finalizarSessao();
-      }
       notifyListeners();
     };
 
