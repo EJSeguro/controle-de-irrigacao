@@ -11,7 +11,6 @@ class SystemProvider extends ChangeNotifier {
   String? _usuarioEmail;
 
   static const int _thresholdSeco = 45;
-  static const Duration _timeoutInatividade = Duration(minutes: 2);
 
   SystemProvider(this._mqtt, this._db) {
     _setupMqttCallbacks();
@@ -158,7 +157,10 @@ class SystemProvider extends ChangeNotifier {
     if (!_sessaoAtiva) return;
     final referencia = _ultimaLeitura?.data ?? _inicioSessao;
     if (referencia == null) return;
-    if (DateTime.now().difference(referencia) >= _timeoutInatividade) {
+    final inatividade = DateTime.now().difference(referencia);
+    final tolerancia = Duration(
+        seconds: (_intervaloSegundos + 60).clamp(120, 3600));
+    if (inatividade >= tolerancia) {
       _finalizarSessao();
     }
   }
