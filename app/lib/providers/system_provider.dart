@@ -87,6 +87,8 @@ class SystemProvider extends ChangeNotifier {
 
   DateTime? _inicioSessao;
   DateTime? _bombaLigadaDesde;
+  int _acumuladoTempoBomba = 0;
+  double _acumuladoConsumo = 0;
 
   bool get sistemaLigado => _sistemaLigado;
   bool get bombaLigada => _bombaLigada;
@@ -195,6 +197,17 @@ class SystemProvider extends ChangeNotifier {
     };
   }
 
+  int get _intervaloSegundos {
+    if (_unidadeIntervalo == 'h') return _intervaloLeitura * 3600;
+    return _intervaloLeitura * 60;
+  }
+
+  void _enviarIntervalo(int segundos) {
+    if (_mqttConectado && segundos >= 10) {
+      _mqtt.setConfig(segundos);
+    }
+  }
+
   void _aplicarRegraDeNegocio(int umidade) {
     if (!_sessaoAtiva) return;
 
@@ -203,6 +216,7 @@ class SystemProvider extends ChangeNotifier {
     if (umidade < _thresholdSeco) {
       if (!_bombaLigada && !_bombaDesligadaManual) {
         _ligarBombaInterno();
+        _enviarIntervalo(10);
       }
     } else {
       if (_bombaLigada) {
@@ -210,20 +224,32 @@ class SystemProvider extends ChangeNotifier {
         if (_mqttConectado) _mqtt.setBomba(false);
         _bombaLigada = false;
         _resultadoDepois = umidade;
-        _calcularConsumoEConsolidar();
+        _acumularConsumo();
+        _enviarIntervalo(_intervaloSegundos);
+        notifyListeners();
       }
     }
   }
 
-  void _calcularConsumoEConsolidar() {
-    if (_bombaLigadaDesde != null) {
-      final duracao = DateTime.now().difference(_bombaLigadaDesde!);
-      _resultadoTempoBomba = duracao.inSeconds;
-    } else {
-      _resultadoTempoBomba = 0;
-    }
+  void _acumularConsumo() {
+    if (_bombaLigadaDesde == null) return;
+    final segundos = DateTime.now().difference(_bombaLigadaDesde!).inSeconds;
+    _acumuladoTempoBomba += segundos;
+    _acumuladoConsumo += vazaoEstimada * segundos / 60;
     _bombaLigadaDesde = null;
-    _consumoUltimoCiclo = vazaoEstimada * (_resultadoTempoBomba ?? 0) / 60;
+  }
+
+  void _finalizarSessao() {
+    if (_bombaLigada) {
+      if (_mqttConectado) _mqtt.setBomba(false);
+      _acumularConsumo();
+    }
+
+    _resultadoTempoBomba = _acumuladoTempoBomba;
+    _consumoUltimoCiclo = _acumuladoConsumo;
+    _acumuladoTempoBomba = 0;
+    _acumuladoConsumo = 0;
+    _bombaLigadaDesde = null;
 
     if (_resultadoTempoBomba != null && _resultadoTempoBomba! > 0) {
       final record = ConsumoRecord(
@@ -235,36 +261,7 @@ class SystemProvider extends ChangeNotifier {
       _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
     }
 
-    _salvarResultadoSessao();
-    _sessaoAtiva = false;
-    _sistemaLigado = false;
-    _inicioSessao = null;
-    notifyListeners();
-  }
-
-  void _finalizarSessao() {
-    if (_bombaLigada) {
-      if (_mqttConectado) _mqtt.setBomba(false);
-      _bombaLigada = false;
-    }
-
-    final tempo = _bombaLigadaDesde != null
-        ? DateTime.now().difference(_bombaLigadaDesde!).inSeconds
-        : 0;
-    _resultadoTempoBomba = tempo;
-    _bombaLigadaDesde = null;
-    _consumoUltimoCiclo = vazaoEstimada * tempo / 60;
-
-    if (tempo > 0) {
-      final record = ConsumoRecord(
-        data: DateTime.now(),
-        litros: _consumoUltimoCiclo,
-        tempoSegundos: tempo,
-      );
-      _historicoConsumo.insert(0, record);
-      _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
-    }
-
+    _enviarIntervalo(_intervaloSegundos);
     _salvarResultadoSessao();
     _sessaoAtiva = false;
     _sistemaLigado = false;
@@ -348,6 +345,8 @@ class SystemProvider extends ChangeNotifier {
       _resultadoAntes = null;
       _resultadoDepois = null;
       _resultadoTempoBomba = null;
+      _acumuladoTempoBomba = 0;
+      _acumuladoConsumo = 0;
     } else {
       _mqtt.sendComando('LIGAR');
       _sistemaLigado = true;
@@ -356,6 +355,8 @@ class SystemProvider extends ChangeNotifier {
       _resultadoAntes = null;
       _resultadoDepois = null;
       _resultadoTempoBomba = null;
+      _acumuladoTempoBomba = 0;
+      _acumuladoConsumo = 0;
       _bombaDesligadaManual = false;
     }
     notifyListeners();
@@ -373,6 +374,8 @@ class SystemProvider extends ChangeNotifier {
     _resultadoAntes = null;
     _resultadoDepois = null;
     _resultadoTempoBomba = null;
+    _acumuladoTempoBomba = 0;
+    _acumuladoConsumo = 0;
     notifyListeners();
   }
 
