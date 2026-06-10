@@ -56,6 +56,10 @@ class SystemProvider extends ChangeNotifier {
     _unidadeIntervalo = cfg['unidade_intervalo'] ?? 'min';
     _potenciaBomba = double.tryParse(cfg['potencia_bomba'] ?? '') ?? 12;
     _diametroTubulacao = double.tryParse(cfg['diametro_tubulacao'] ?? '') ?? 20;
+    _resultadoAntes = int.tryParse(cfg['sessao_antes'] ?? '');
+    _resultadoDepois = int.tryParse(cfg['sessao_depois'] ?? '');
+    _resultadoTempoBomba = int.tryParse(cfg['sessao_tempo'] ?? '');
+    _consumoUltimoCiclo = double.tryParse(cfg['sessao_consumo'] ?? '') ?? 0;
   }
 
   bool _sistemaLigado = false;
@@ -151,7 +155,7 @@ class SystemProvider extends ChangeNotifier {
   void _verificarTimeoutSessao() {
     if (!_sessaoAtiva || _inicioSessao == null) return;
     if (DateTime.now().difference(_inicioSessao!) >= _duracaoMaxSessao) {
-      _finalizarSessao(timeout: true);
+      _finalizarSessao();
     }
   }
 
@@ -179,6 +183,9 @@ class SystemProvider extends ChangeNotifier {
 
     _mqtt.onConexaoEsp = (online) {
       _espOnline = online;
+      if (!online && _sessaoAtiva) {
+        _finalizarSessao();
+      }
       notifyListeners();
     };
 
@@ -228,13 +235,14 @@ class SystemProvider extends ChangeNotifier {
       _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
     }
 
+    _salvarResultadoSessao();
     _sessaoAtiva = false;
     _sistemaLigado = false;
     _inicioSessao = null;
     notifyListeners();
   }
 
-  void _finalizarSessao({bool timeout = false}) {
+  void _finalizarSessao() {
     if (_bombaLigada) {
       if (_mqttConectado) _mqtt.setBomba(false);
       _bombaLigada = false;
@@ -257,10 +265,19 @@ class SystemProvider extends ChangeNotifier {
       _db.salvarConsumo(record, usuarioEmail: _usuarioEmail ?? '');
     }
 
+    _salvarResultadoSessao();
     _sessaoAtiva = false;
     _sistemaLigado = false;
     _inicioSessao = null;
     notifyListeners();
+  }
+
+  void _salvarResultadoSessao() {
+    final email = _usuarioEmail ?? '';
+    _db.salvarConfig('sessao_antes', _resultadoAntes?.toString() ?? '', usuarioEmail: email);
+    _db.salvarConfig('sessao_depois', _resultadoDepois?.toString() ?? '', usuarioEmail: email);
+    _db.salvarConfig('sessao_tempo', _resultadoTempoBomba?.toString() ?? '', usuarioEmail: email);
+    _db.salvarConfig('sessao_consumo', _consumoUltimoCiclo.toString(), usuarioEmail: email);
   }
 
   void _adicionarLeitura(int umidade, String tipo, {String? statusSolo}) {

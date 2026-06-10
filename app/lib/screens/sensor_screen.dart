@@ -80,22 +80,6 @@ class SensorScreen extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Conexão', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                _statusRow('MQTT', system.mqttConectado),
-                const SizedBox(height: 8),
-                _statusRow('ESP32', system.espOnline),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -110,16 +94,6 @@ class SensorScreen extends StatelessWidget {
           Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
-    );
-  }
-
-  Widget _statusRow(String label, bool ativo) {
-    return Row(
-      children: [
-        Icon(Icons.circle, size: 12, color: ativo ? Colors.green : Colors.red),
-        const SizedBox(width: 8),
-        Text('$label: ${ativo ? "Conectado" : "Desconectado"}'),
-      ],
     );
   }
 }

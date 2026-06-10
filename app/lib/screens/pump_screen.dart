@@ -54,21 +54,6 @@ class PumpScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Status Atual',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                _infoRow('Vazão estimada', '${system.vazaoEstimada.toStringAsFixed(1)} L/min'),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
                 Text('Último Ciclo',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
