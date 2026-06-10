@@ -243,7 +243,58 @@ sequenceDiagram
 
 ---
 
-## 7. Principais Funções do Código
+## 7. Firmware ESP32 (`iot_code.ino`)
+
+### Tópicos assinados pelo ESP
+
+| Tópico | Ação ao receber |
+|--------|----------------|
+| `Bomba` | `"ON"` → desbloqueia e liga bomba; `"OFF"` → bloqueia bomba e encerra sessão |
+| `sensor/comando` | `"LIGAR"` → inicia sessão; `"DESLIGAR"` → encerra sessão; `"LER"` → leitura manual (cooldown 10s) |
+| `sensor/config` | Atualiza `intervaloLeituraMs` se `>= 10s` |
+
+### Tópicos publicados pelo ESP
+
+| Tópico | Quando | Payload |
+|--------|--------|---------|
+| `sensor_umidade` | A cada `intervaloLeituraMs` durante sessão, ou em leitura manual | `{"umidade": N, "status": "...", "bomba": "ON/OFF", "tipo": "auto/manual"}` |
+| `Bomba` (retain) | Ao ligar/desligar a bomba | `"ON"` / `"OFF"` |
+| `esp32/status` (LWT + online) | Conexão/disconexão MQTT | `"online"` / `"offline"` |
+| `sensor/resultado` | Ao finalizar sessão | `{"antes": N, "depois": N, "tempo_bomba": N}` |
+
+### Funções principais
+
+| Função | O que é |
+|--------|---------|
+| `setup()` | Inicialização: Serial, pinos, Wi-Fi, MQTT (callback assinatura de tópicos) |
+| `loop()` | Loop principal: reconexão Wi-Fi/MQTT, timer de sessão, leitura e controle da bomba |
+| `conectarWiFi()` | Conexão Wi‑Fi com até 20s de tentativa; reinicia o ESP se falhar |
+| `conectarMQTT()` | Conexão MQTT com HiveMQ Cloud; publica `online` no LWT e re-sincroniza estado da bomba |
+| `callbackMQTT()` | Callback de mensagens recebidas: roteia para comando, bomba ou config |
+| `lerUmidade()` | Leitura do sensor analógico (média de 10 amostras), mapeada para 0–100% |
+| `publicarLeitura()` | Monta JSON e publica no tópico sensor_umidade |
+| `ligarBomba()` | Liga o relé da bomba, inicia contagem de tempo, publica `"ON"` |
+| `desligarBomba()` | Desliga o relé, acumula tempo no `tempoBombaMs`, publica `"OFF"` |
+| `finalizarSessao()` | Desliga bomba, publica `sensor/resultado` com `antes`/`depois`/`tempo_bomba` |
+| `statusSolo()` | Classifica umidade em "muito_seco", "seco", "ideal", "umido", "encharcado" |
+
+### Regra de negócio do firmware
+
+```
+Loop da sessão (a cada intervaloLeituraMs):
+  1. Ler umidade do sensor
+  2. Se for a primeira leitura, salvar como umidadeAntes
+  3. Publicar leitura no tópico sensor_umidade
+  4. Se umidade < 45%: ligar bomba
+  5. Se umidade >= 45%:
+     - Se bomba estava ligada (ou já acumulou tempo): finalizar sessão com a leitura atual
+     - Senão: apenas garantir bomba desligada
+  6. Se tempo de sessão >= 2 min: finalizar sessão (timeout)
+```
+
+---
+
+## 8. Principais Funções do Código (App)
 
 ### `system_provider.dart`
 
