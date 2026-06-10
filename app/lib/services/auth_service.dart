@@ -80,17 +80,17 @@ class AuthService extends ChangeNotifier {
   Future<String> login(String email, String password) async {
     final key = email.trim().toLowerCase();
     final stored = _accounts[key];
-    if (stored == null) {
-      throw Exception('Usuário não encontrado.');
+    if (stored == null || !stored.contains(':')) {
+      throw Exception('Usuário ou senha inválidos.');
     }
     final parts = stored.split(':');
     if (parts.length != 2) {
-      throw Exception('Erro interno: formato de senha inválido.');
+      throw Exception('Usuário ou senha inválidos.');
     }
     final salt = parts[0];
     final hash = parts[1];
     if (!DatabaseService.verificarSenha(password, salt, hash)) {
-      throw Exception('Senha incorreta.');
+      throw Exception('Usuário ou senha inválidos.');
     }
     await _db.criarUsuario(key, hash, salt);
     _currentEmail = key;

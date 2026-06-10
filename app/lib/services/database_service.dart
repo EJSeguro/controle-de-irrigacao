@@ -326,12 +326,16 @@ class DatabaseService {
   Future<void> criarUsuario(String email, String senhaHash, String salt) async {
     if (_isWeb) return;
     final db = await database;
-    await db.insert('usuarios', {
-      'email': email,
-      'senha_hash': senhaHash,
-      'salt': salt,
-      'criado_em': DateTime.now().toIso8601String(),
-    });
+    await db.insert(
+      'usuarios',
+      {
+        'email': email,
+        'senha_hash': senhaHash,
+        'salt': salt,
+        'criado_em': DateTime.now().toIso8601String(),
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<Map<String, dynamic>?> carregarUsuario(String email) async {
