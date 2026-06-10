@@ -201,7 +201,7 @@ class SystemProvider extends ChangeNotifier {
     _resultadoAntes ??= umidade;
 
     if (umidade < _thresholdSeco) {
-      if (!_bombaLigada) {
+      if (!_bombaLigada && !_bombaDesligadaManual) {
         _ligarBombaInterno();
       }
     } else {
