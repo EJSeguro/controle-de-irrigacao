@@ -9,6 +9,7 @@ class AuthService extends ChangeNotifier {
   AuthService(this._db);
 
   static const _key = 'accounts';
+  static const _sessionKey = 'current_email';
   Map<String, String> _accounts = {};
   String? _currentEmail;
   bool _loading = true;
@@ -24,6 +25,7 @@ class AuthService extends ChangeNotifier {
       _accounts = Map<String, String>.from(jsonDecode(raw));
     }
     _migrarSenhas();
+    _currentEmail = prefs.getString(_sessionKey);
     _loading = false;
     notifyListeners();
   }
@@ -47,6 +49,15 @@ class AuthService extends ChangeNotifier {
     await prefs.setString(_key, jsonEncode(_accounts));
   }
 
+  Future<void> _salvarSessao() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_currentEmail != null) {
+      await prefs.setString(_sessionKey, _currentEmail!);
+    } else {
+      await prefs.remove(_sessionKey);
+    }
+  }
+
   Future<String> register(String email, String password) async {
     final key = email.trim().toLowerCase();
     if (_accounts.containsKey(key)) {
@@ -61,6 +72,7 @@ class AuthService extends ChangeNotifier {
     await _salvar();
     await _db.criarUsuario(key, hash, salt);
     _currentEmail = key;
+    await _salvarSessao();
     notifyListeners();
     return key;
   }
@@ -82,12 +94,14 @@ class AuthService extends ChangeNotifier {
     }
     await _db.criarUsuario(key, hash, salt);
     _currentEmail = key;
+    await _salvarSessao();
     notifyListeners();
     return key;
   }
 
   Future<void> logout() async {
     _currentEmail = null;
+    await _salvarSessao();
     notifyListeners();
   }
 }
