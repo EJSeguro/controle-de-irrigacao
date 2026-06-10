@@ -177,8 +177,10 @@ class SystemProvider extends ChangeNotifier {
     _mqtt.onStatusBomba = (status) {
       final ligada = status == 'ON';
       if (ligada && !_bombaLigada) {
-        _bombaLigada = true;
-        _bombaLigadaDesde = DateTime.now();
+        if (_sessaoAtiva && !_bombaDesligadaManual) {
+          _bombaLigada = true;
+          _bombaLigadaDesde = DateTime.now();
+        }
       } else if (!ligada && _bombaLigada) {
         _bombaLigada = false;
         _bombaLigadaDesde = null;
@@ -347,6 +349,7 @@ class SystemProvider extends ChangeNotifier {
       _resultadoTempoBomba = null;
       _acumuladoTempoBomba = 0;
       _acumuladoConsumo = 0;
+      _bombaDesligadaManual = true;
     } else {
       _mqtt.sendComando('LIGAR');
       _sistemaLigado = true;
@@ -376,6 +379,7 @@ class SystemProvider extends ChangeNotifier {
     _resultadoTempoBomba = null;
     _acumuladoTempoBomba = 0;
     _acumuladoConsumo = 0;
+    _bombaDesligadaManual = true;
     notifyListeners();
   }
 
