@@ -48,14 +48,13 @@ class MqttService {
     _client!.resubscribeOnAutoReconnect = true;
 
     _client!.connectionMessage = MqttConnectMessage()
-        .authenticateAs(user, pass)
         .withWillTopic(topicoStatus)
         .withWillMessage('offline')
         .withWillQos(MqttQos.atLeastOnce)
         .startClean();
 
     try {
-      await _client!.connect(user, pass).timeout(const Duration(seconds: 10));
+      await _client!.connect(user, pass).timeout(const Duration(seconds: 30));
     } on TimeoutException {
       _conectado = false;
       onConexaoMqtt?.call(false);
